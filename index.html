@@ -1,729 +1,227 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Платформа тестирования </title>
+  <meta charset="UTF-8">
+  <title>Система тестирования</title>
   <style>
-    /* Простые стили для удобства */
-    :root{ --bg:#f6f7fb; --card:#fff; --accent:#2563eb; --danger:#ef4444; --muted:#6b7280; }
-    body{ font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin:0; background:var(--bg); color:#111; }
-    .container{ max-width:1100px; margin:28px auto; padding:20px; }
-    .header{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px }
-    .card{ background:var(--card); border-radius:10px; padding:16px; box-shadow:0 6px 18px rgba(15,23,42,0.06); }
-    h1{ margin:0; font-size:20px }
-    button{ cursor:pointer; border:0; background:var(--accent); color:#fff; padding:8px 12px; border-radius:8px; }
-    button.ghost{ background:transparent; color:var(--accent); border:1px solid #e6eefc; }
-    .cols{ display:flex; gap:12px; }
-    .col{ flex:1; }
-    input, select, textarea{ width:100%; padding:8px 10px; border-radius:8px; border:1px solid #e6eefc; box-sizing:border-box; }
-    textarea{ min-height:160px; font-family:inherit; }
-    .small{ font-size:13px; color:var(--muted) }
-    .muted{ color:var(--muted) }
-    .list{ margin:0; padding:0; list-style:none; display:flex; gap:8px; flex-wrap:wrap }
-    .list button{ background:#eef2ff; color:#0f172a; padding:6px 10px; border-radius:8px; }
-    table{ width:100%; border-collapse:collapse; }
-    th,td{ padding:8px 10px; border-bottom:1px solid #f1f5f9; text-align:left; font-size:14px }
-    .danger{ background:var(--danger); color:#fff; }
-    .ok{ background:#10b981; color:#fff; }
-    .badge{ background:#eef2ff; color:#0f172a; padding:4px 8px; border-radius:6px; font-size:12px }
-    .flex { display:flex; gap:8px; align-items:center; }
-    .right{ margin-left:auto; }
-    .note{ font-size:13px; color:var(--muted); margin-top:6px; }
-    .hidden{ display:none; }
-    .topnav button{ background:transparent; color:var(--accent); border:1px solid transparent; }
-    .topnav button.active{ font-weight:600; border-bottom:2px solid var(--accent); }
-    .tiny{ font-size:12px; padding:6px 8px; border-radius:6px }
-    .field-row{ display:flex; gap:8px; align-items:center; margin-top:8px }
-    .field-row input[type="text"]{ flex:1 }
+    body, html {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      font-family: Arial, sans-serif;
+      color: white;
+      background: black;
+      overflow: hidden;
+    }
+
+    /* Фон canvas */
+    #stars {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: -1;
+    }
+
+    #app {
+      position: relative;
+      z-index: 1;
+      padding: 20px;
+      background: rgba(0,0,0,0.6);
+      border-radius: 12px;
+      max-width: 800px;
+      margin: 50px auto;
+    }
+
+    h2 { margin-top: 0; }
+
+    .hidden { display: none; }
+
+    .muted { color: #aaa; font-size: 0.9em; }
+
+    ol { padding-left: 20px; }
+    li { margin-bottom: 12px; }
+    li label { display: block; margin-left: 12px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div>
-        <h1>Платформа для зачётов </h1>
-        <div class="small muted">Админская панель, загрузка тестов текстом, контроль доступа, мониторинг подключений</div>
-      </div>
-      <div class="flex">
-        <div id="current-user" class="small muted"></div>
-        <div id="nav-buttons" class="topnav"></div>
-      </div>
-    </div>
+  <canvas id="stars"></canvas>
+  <div id="app"></div>
 
-    <!-- Основная карточка для содержимого -->
-    <div id="main" class="card">
-      <!-- Контент подменяется скриптом -->
-    </div>
+  <script>
+    // ====== Фон "звёздное небо" ======
+    const canvas = document.getElementById('stars');
+    const ctx = canvas.getContext('2d');
+    let stars = [];
+    let w, h;
 
-    <div style="margin-top:12px" class="small muted">перед запуском теста включите геоданные </div>
-  </div>
-
-<script>
-/*
-  Single-file demo application
-  - Хранение: localStorage
-  - Пароли: хешируем SHA-256 (в браузере) и храним хеш
-  - Админ: admin /admin123 (создается автоматически при первом старте)
-  - Функции: users management, text editor, categories, tests, taking tests, logs
-*/
-
-/* ---------- Утилиты ---------- */
-
-// async hash (SHA-256) -> hex
-async function hashPasswordToHex(password) {
-  const enc = new TextEncoder();
-  const data = enc.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// storage helpers
-const DB = {
-  get(key) { try { return JSON.parse(localStorage.getItem(key)) || null } catch(e){return null} },
-  set(key, val) { localStorage.setItem(key, JSON.stringify(val)); },
-  remove(key) { localStorage.removeItem(key) }
-};
-
-// ensure initial data
-async function ensureInitialData() {
-  if (!DB.get('users')) {
-    const adminHash = await hashPasswordToHex('admin123');
-    DB.set('users', [
-      { username: 'admin', passwordHash: adminHash, role: 'admin', active: true }
-    ]);
-  }
-  if (!DB.get('categories')) DB.set('categories', ['Общий']);
-  if (!DB.get('tests')) DB.set('tests', {}); // { category: [ {id,title,questions[]} ] }
-  if (!DB.get('logs')) DB.set('logs', []);   // { user, testId, testTitle, ip, city, country, ua, time, event }
-  if (!DB.get('sessions')) DB.set('sessions', { current: null });
-}
-function saveUsers(users){ DB.set('users', users) }
-function loadUsers(){ return DB.get('users') || [] }
-function saveTests(tests){ DB.set('tests', tests) }
-function loadTests(){ return DB.get('tests') || {} }
-function saveCategories(cats){ DB.set('categories', cats) }
-function loadCategories(){ return DB.get('categories') || [] }
-function appendLog(entry){ const logs = DB.get('logs') || []; logs.push(entry); DB.set('logs', logs); }
-
-/* ---------- UI state ---------- */
-
-let AppState = {
-  page: 'home', // home, login, admin, admin_users, admin_editor, admin_tests, admin_logs, student_dashboard, take_test
-  currentUser: null,
-  selectedCategory: null,
-  selectedTestId: null
-};
-
-/* ---------- Rendering helpers ---------- */
-
-function el(tag, props = {}, children = '') {
-  const node = document.createElement(tag);
-  for (const k in props) {
-    if (k === 'class') node.className = props[k];
-    else if (k === 'html') node.innerHTML = props[k];
-    else node.setAttribute(k, props[k]);
-  }
-  if (typeof children === 'string') node.appendChild(document.createTextNode(children));
-  else if (Array.isArray(children)) children.forEach(c => node.appendChild(c));
-  else if (children instanceof Node) node.appendChild(children);
-  return node;
-}
-
-/* ---------- Navigation / Header ---------- */
-
-function renderNav() {
-  const nav = document.getElementById('nav-buttons');
-  nav.innerHTML = '';
-  const user = AppState.currentUser;
-  const addNavBtn = (name, key) => {
-    const b = el('button', { class: (AppState.page === key ? 'active' : '' ) + ' tiny' }, name);
-    b.onclick = () => { AppState.page = key; renderMain(); };
-    nav.appendChild(b);
-  };
-
-  if (!user) {
-    addNavBtn('Главная', 'home');
-    addNavBtn('Вход', 'login');
-  } else {
-    // common nav
-    addNavBtn('Главная', 'home');
-    if (user.role === 'admin') {
-      addNavBtn('Админ', 'admin');
-      addNavBtn('Пользователи', 'admin_users');
-      addNavBtn('Редактор (текстом)', 'admin_editor');
-      addNavBtn('Тесты', 'admin_tests');
-      addNavBtn('Мониторинг', 'admin_logs');
-    } else {
-      addNavBtn('Мои тесты', 'student_dashboard');
+    function resize() {
+      w = canvas.width = window.innerWidth;
+      h = canvas.height = window.innerHeight;
+      stars = Array.from({length: 200}, () => ({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        z: Math.random() * w
+      }));
     }
-    // logout button
-    const logoutBtn = el('button', {}, 'Выйти');
-    logoutBtn.onclick = async () => { AppState.currentUser = null; DB.set('sessions', { current: null }); AppState.page='home'; renderMain(); renderNav() };
-    logoutBtn.style.marginLeft = '12px';
-    nav.appendChild(logoutBtn);
-  }
+    window.addEventListener('resize', resize);
+    resize();
 
-  // current user display
-  const cu = document.getElementById('current-user');
-  cu.innerText = user ? `${user.username} (${user.role})` : 'Не вошёл';
-}
-
-/* ---------- Pages ---------- */
-
-async function renderMain() {
-  const main = document.getElementById('main');
-  main.innerHTML = '';
-
-  // sync current user from sessions
-  const session = DB.get('sessions') || { current: null };
-  if (!AppState.currentUser && session.current) AppState.currentUser = session.current;
-  renderNav();
-
-  if (AppState.page === 'home') {
-    renderHome(main);
-  } else if (AppState.page === 'login') {
-    renderLogin(main);
-  } else if (AppState.page === 'admin') {
-    renderAdminWelcome(main);
-  } else if (AppState.page === 'admin_users') {
-    renderAdminUsers(main);
-  } else if (AppState.page === 'admin_editor') {
-    renderAdminEditor(main);
-  } else if (AppState.page === 'admin_tests') {
-    renderAdminTests(main);
-  } else if (AppState.page === 'admin_logs') {
-    renderAdminLogs(main);
-  } else if (AppState.page === 'student_dashboard') {
-    renderStudentDashboard(main);
-  } else if (AppState.page === 'take_test') {
-    renderTakeTest(main);
-  } else {
-    main.innerText = 'Страница не найдена';
-  }
-}
-
-/* Home: список категорий */
-function renderHome(container) {
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Категории тестов'));
-  const cats = loadCategories();
-  if (!cats || cats.length === 0) {
-    c.appendChild(el('p', { class: 'muted' }, 'Пока нет категорий — админ может создать.'));
-  } else {
-    const list = el('div', { class: 'cols', style: 'margin-top:12px' });
-    cats.forEach(cat => {
-      const card = el('div', { class: 'card col' });
-      card.appendChild(el('div', {}, el('strong', {}, cat)));
-      const tests = loadTests()[cat] || [];
-      card.appendChild(el('div', { class: 'small muted' }, `Тестов: ${tests.length}`));
-      const btnRow = el('div', { class: 'field-row', style: 'margin-top:8px' });
-      const viewBtn = el('button', {}, 'Посмотреть тесты');
-      viewBtn.onclick = () => {
-        // show tests list for category
-        AppState.selectedCategory = cat;
-        AppState.page = 'admin_tests';
-        renderMain();
-      };
-      btnRow.appendChild(viewBtn);
-      list.appendChild(card);
-      card.appendChild(btnRow);
-    });
-    c.appendChild(list);
-  }
-
-  c.appendChild(el('hr', { style: 'margin:12px 0' }));
-  c.appendChild(el('p', { class: 'small muted' }, 'Если вы студент — администратор должен создать вам учётную запись и включить доступ.'));
-  container.appendChild(c);
-}
-
-/* Login form (admin or student) */
-function renderLogin(container) {
-  const wrap = el('div');
-  wrap.appendChild(el('h2', {}, 'Вход'));
-  wrap.appendChild(el('div', { class: 'small muted' }, 'Вход только для созданных администратором пользователей.'));
-
-  const form = el('div', { style: 'margin-top:12px' });
-  const inpUser = el('input', { placeholder: 'Логин' });
-  const inpPass = el('input', { placeholder: 'Пароль', type: 'password' });
-  const loginBtn = el('button', {}, 'Войти');
-  const mess = el('div', { class: 'note' });
-
-  loginBtn.onclick = async () => {
-    const username = inpUser.value.trim();
-    const password = inpPass.value;
-    if (!username || !password) { mess.innerText = 'Введите логин и пароль'; return; }
-    try {
-      const users = loadUsers();
-      const u = users.find(x => x.username === username);
-      if (!u) { mess.innerText = 'Пользователь не найден'; return; }
-      if (!u.active) { mess.innerText = 'Доступ запрещён администратором'; return; }
-      const passHash = await hashPasswordToHex(password);
-      if (passHash !== u.passwordHash) { mess.innerText = 'Неверный пароль'; return; }
-      // success
-      AppState.currentUser = { username: u.username, role: u.role };
-      DB.set('sessions', { current: AppState.currentUser });
-      mess.innerText = 'Успешный вход';
-      AppState.page = (u.role === 'admin') ? 'admin' : 'student_dashboard';
-      renderMain();
-      renderNav();
-    } catch (e) {
-      mess.innerText = 'Ошибка входа';
-      console.error(e);
-    }
-  };
-
-  form.appendChild(inpUser);
-  form.appendChild(el('div', { class: 'field-row' }, inpPass));
-  form.appendChild(el('div', { style: 'margin-top:10px' }, loginBtn));
-  form.appendChild(mess);
-  wrap.appendChild(form);
-  container.appendChild(wrap);
-}
-
-/* Admin welcome */
-function renderAdminWelcome(container) {
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Админ — панель управления'));
-  c.appendChild(el('div', { class: 'small muted' }, 'Используйте меню сверху для управления пользователями, тестами и логами.'));
-  container.appendChild(c);
-}
-
-/* Admin: Users manager */
-function renderAdminUsers(container) {
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Управление пользователями'));
-  c.appendChild(el('div', { class: 'small muted' }, 'Добавляйте студентов, включайте/отключайте доступ. Пароли хранятся в виде SHA-256 хеша.'));
-
-  const users = loadUsers();
-
-  // table
-  const table = el('table', { style: 'margin-top:12px' });
-  const thead = el('tr');
-  thead.appendChild(el('th', {}, 'Логин'));
-  thead.appendChild(el('th', {}, 'Роль'));
-  thead.appendChild(el('th', {}, 'Доступ'));
-  thead.appendChild(el('th', {}, 'Действия'));
-  table.appendChild(thead);
-
-  const tbody = el('tbody');
-  users.forEach(u => {
-    const tr = el('tr');
-    tr.appendChild(el('td', {}, u.username));
-    tr.appendChild(el('td', {}, u.role));
-    tr.appendChild(el('td', {}, u.active ? 'Разрешён' : 'Отключён'));
-    const actions = el('td');
-    const toggle = el('button', { class: 'tiny' }, u.active ? 'Отключить' : 'Разрешить');
-    toggle.onclick = async () => {
-      const all = loadUsers();
-      const item = all.find(x => x.username === u.username);
-      item.active = !item.active;
-      saveUsers(all);
-      renderMain();
-    };
-    const del = el('button', { class: 'tiny', style: 'margin-left:6px;background:#fee2e2;color:#991b1b' }, 'Удалить');
-    del.onclick = async () => {
-      if (!confirm('Удалить пользователя?')) return;
-      const all = loadUsers().filter(x => x.username !== u.username);
-      saveUsers(all);
-      renderMain();
-    };
-    actions.appendChild(toggle);
-    actions.appendChild(del);
-    tr.appendChild(actions);
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  c.appendChild(table);
-
-  // add user form
-  c.appendChild(el('hr', { style: 'margin:12px 0' }));
-  c.appendChild(el('h3', {}, 'Добавить студента'));
-  const addForm = el('div', { class: 'field-row', style: 'margin-top:8px' });
-  const inpLogin = el('input', { placeholder: 'Логин (напр. student1)' });
-  const inpPass = el('input', { placeholder: 'Пароль', type: 'password' });
-  const addBtn = el('button', {}, 'Добавить');
-  const addMsg = el('div', { class: 'note' });
-
-  addBtn.onclick = async () => {
-    const username = inpLogin.value.trim();
-    const password = inpPass.value;
-    if (!username || !password) { addMsg.innerText = 'Введите логин и пароль'; return; }
-    const users = loadUsers();
-    if (users.find(x => x.username === username)) { addMsg.innerText = 'Пользователь с таким логином уже есть'; return; }
-    const passwordHash = await hashPasswordToHex(password);
-    users.push({ username, passwordHash, role: 'student', active: false });
-    saveUsers(users);
-    inpLogin.value=''; inpPass.value='';
-    addMsg.innerText = 'Студент добавлен (по умолчанию отключён) — включите доступ';
-    renderMain();
-  };
-
-  addForm.appendChild(inpLogin);
-  addForm.appendChild(inpPass);
-  addForm.appendChild(addBtn);
-  c.appendChild(addForm);
-  c.appendChild(addMsg);
-
-  container.appendChild(c);
-}
-
-/* Admin: Text editor for bulk test insertion */
-function renderAdminEditor(container) {
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Редактор теста (вставить весь тест текстом)'));
-  c.appendChild(el('div', { class: 'small muted' }, 'Формат: используйте номера и варианты с "-" ; пометьте правильный вариант * после текста варианта. Пример:'));
-  c.appendChild(el('pre', { class: 'small muted', style: 'background:#f8fafc;padding:8px;border-radius:8px;margin-top:8px' },
-`1) Столица Франции?
-- Берлин
-- Париж *
-- Лондон
-
-2) 2+2=?
-- 3
-- 4 *
-- 5`));
-  c.appendChild(el('div', { style: 'margin-top:10px' }));
-
-  // category selection + new
-  const cats = loadCategories();
-  const sel = el('select');
-  sel.appendChild(el('option', { value: '' }, 'Выберите категорию'));
-  cats.forEach(cat => sel.appendChild(el('option', { value: cat }, cat)));
-  const newCatInput = el('input', { placeholder: 'Или введите новую категорию' });
-  const textArea = el('textarea', { placeholder: 'Вставьте тест здесь...' });
-
-  const saveBtn = el('button', { style: 'margin-top:8px' }, 'Сохранить тест');
-  const msg = el('div', { class: 'note' });
-
-  saveBtn.onclick = async () => {
-    const raw = textArea.value.trim();
-    if (!raw) { msg.innerText = 'Вставьте тест'; return; }
-    let category = sel.value;
-    if (!category) {
-      category = newCatInput.value.trim();
-      if (!category) { msg.innerText = 'Выберите или введите категорию'; return; }
-    }
-    // parse
-    const parsed = parseTestFromText(raw);
-    if (!parsed || parsed.length === 0) { msg.innerText = 'Не удалось распарсить тест (проверьте формат)'; return; }
-    // create test object
-    const test = { id: 't_'+Date.now(), title: 'Тест ' + (new Date()).toLocaleString(), category, questions: parsed };
-    const tests = loadTests();
-    if (!tests[category]) tests[category] = [];
-    tests[category].push(test);
-    saveTests(tests);
-    // save category
-    const categories = loadCategories();
-    if (!categories.includes(category)) {
-      categories.push(category);
-      saveCategories(categories);
-    }
-    textArea.value=''; newCatInput.value=''; sel.value='';
-    msg.innerText = 'Тест сохранён';
-    renderMain();
-  };
-
-  c.appendChild(el('div', { class: 'field-row' }, sel));
-  c.appendChild(el('div', { class: 'field-row', style: 'margin-top:8px' }, newCatInput));
-  c.appendChild(textArea);
-  c.appendChild(saveBtn);
-  c.appendChild(msg);
-  container.appendChild(c);
-}
-
-/* Admin: list of tests with preview & delete */
-function renderAdminTests(container) {
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Менеджер тестов'));
-  const tests = loadTests();
-  const cats = Object.keys(tests);
-  if (cats.length === 0) {
-    c.appendChild(el('p', { class: 'muted' }, 'Тесты не созданы'));
-  } else {
-    cats.forEach(cat => {
-      const block = el('div', { class: 'card', style: 'margin-top:12px' });
-      block.appendChild(el('div', {}, el('strong', {}, cat) ));
-      const list = el('div', { style: 'margin-top:8px' });
-      tests[cat].forEach(t => {
-        const row = el('div', { class: 'field-row', style: 'margin-top:8px' });
-        row.appendChild(el('div', {}, t.title + ' (' + t.questions.length + ' вопрос(а/ов))'));
-        const preview = el('button', { class: 'tiny' }, 'Просмотр');
-        preview.onclick = () => showTestPreview(t);
-        const del = el('button', { class: 'tiny', style: 'background:#fee2e2;color:#991b1b' }, 'Удалить');
-        del.onclick = () => {
-          if (!confirm('Удалить тест?')) return;
-          const all = loadTests();
-          all[cat] = all[cat].filter(x=>x.id !== t.id);
-          if (all[cat].length === 0) delete all[cat];
-          saveTests(all);
-          renderMain();
-        };
-        const makePublic = el('button', { class: 'tiny', style: 'background:#e6f6ea;color:#065f46;margin-left:6px' }, 'Доступен студентам');
-        makePublic.onclick = () => {
-          // For demo: to make available to students we simply leave it in tests; students will see categories.
-          alert('Тест доступен студентам — они увидят его в своей категории');
-        };
-        row.appendChild(preview); row.appendChild(makePublic); row.appendChild(del);
-        list.appendChild(row);
+    function drawStars() {
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = 'white';
+      stars.forEach(star => {
+        star.z -= 2;
+        if (star.z <= 0) star.z = w;
+        let k = 128.0 / star.z;
+        let sx = star.x * k + w/2;
+        let sy = star.y * k + h/2;
+        if (sx >= 0 && sx <= w && sy >= 0 && sy <= h) {
+          let size = (1 - star.z / w) * 2;
+          ctx.fillRect(sx, sy, size, size);
+        }
       });
-      block.appendChild(list);
-      c.appendChild(block);
-    });
-  }
-  container.appendChild(c);
-}
-
-/* Admin: logs */
-function renderAdminLogs(container) {
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Мониторинг подключений и логов'));
-  c.appendChild(el('div', { class: 'small muted' }, 'Показываются записи о стартах тестов (IP, город, устройство, время).'));
-
-  const logs = DB.get('logs') || [];
-  if (logs.length === 0) c.appendChild(el('p', { class: 'muted' }, 'Логов пока нет'));
-  else {
-    const table = el('table', { style: 'margin-top:12px' });
-    const head = el('tr');
-    ['Время','Пользователь','Тест','IP','Город','Страна','UA','Событие'].forEach(h => head.appendChild(el('th', {}, h)));
-    table.appendChild(head);
-    logs.slice().reverse().forEach(l => {
-      const r = el('tr');
-      r.appendChild(el('td', {}, new Date(l.time).toLocaleString()));
-      r.appendChild(el('td', {}, l.user || '-'));
-      r.appendChild(el('td', {}, l.testTitle || '-'));
-      r.appendChild(el('td', {}, l.ip || '-'));
-      r.appendChild(el('td', {}, l.city || '-'));
-      r.appendChild(el('td', {}, l.country || '-'));
-      r.appendChild(el('td', {}, l.ua || '-'));
-      r.appendChild(el('td', {}, l.event || '-'));
-      table.appendChild(r);
-    });
-    c.appendChild(table);
-  }
-  // Clear logs
-  const clearBtn = el('button', { style: 'margin-top:10px;background:#fee2e2;color:#991b1b' }, 'Очистить логи');
-  clearBtn.onclick = () => {
-    if (!confirm('Очистить все логи?')) return;
-    DB.set('logs', []);
-    renderMain();
-  };
-  c.appendChild(clearBtn);
-  container.appendChild(c);
-}
-
-/* Student dashboard: choose category -> test */
-function renderStudentDashboard(container) {
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Доступные тесты'));
-  c.appendChild(el('div', { class: 'small muted' }, 'Выберите категорию и тест.'));
-
-  const cats = loadCategories();
-  if (cats.length === 0) c.appendChild(el('p', { class: 'muted' }, 'Пока нет тестов'));
-  else {
-    cats.forEach(cat => {
-      const tests = loadTests()[cat] || [];
-      if (tests.length === 0) return;
-      const block = el('div', { class: 'card', style: 'margin-top:10px' });
-      block.appendChild(el('div', {}, el('strong', {}, cat)));
-      tests.forEach(t => {
-        const row = el('div', { class: 'field-row', style: 'margin-top:8px' });
-        row.appendChild(el('div', {}, t.title + ' (' + t.questions.length + ')'));
-        const start = el('button', { class: 'tiny' }, 'Начать');
-        start.onclick = async () => {
-          AppState.selectedCategory = cat;
-          AppState.selectedTestId = t.id;
-          // log start (collect client info)
-          const info = await collectClientInfo();
-          appendLog({ user: AppState.currentUser.username, testId: t.id, testTitle: t.title, ...info, event: 'start' });
-          AppState.page = 'take_test';
-          renderMain();
-        };
-        row.appendChild(start);
-        block.appendChild(row);
-      });
-      c.appendChild(block);
-    });
-  }
-  container.appendChild(c);
-}
-
-/* Take test page */
-function renderTakeTest(container) {
-  const cat = AppState.selectedCategory;
-  const tests = loadTests();
-  const list = tests[cat] || [];
-  const test = list.find(t => t.id === AppState.selectedTestId);
-  if (!test) { container.appendChild(el('div', {}, 'Тест не найден')); return; }
-
-  const c = el('div');
-  c.appendChild(el('h2', {}, `Тест: ${test.title}`));
-  c.appendChild(el('div', { class: 'small muted' }, `Категория: ${cat}`));
-
-  const answers = {}; // id -> selected index
-
-  const ol = el('ol', { style: 'margin-top:12px' });
-  test.questions.forEach((q, idx) => {
-    const li = el('li', { style: 'margin-top:12px' });
-    li.appendChild(el('div', { class: 'font' }, `${idx+1}. ${q.text}`));
-    q.options.forEach((opt, oi) => {
-      const label = el('label', { class: 'field-row', style: 'margin-top:6px' });
-      const radio = el('input', { type: 'radio', name: `q_${q.id}` });
-      radio.onchange = () => answers[q.id] = oi;
-      label.appendChild(radio);
-      label.appendChild(el('div', {}, opt));
-      li.appendChild(label);
-    });
-    ol.appendChild(li);
-  });
-  c.appendChild(ol);
-
-  const submit = el('button', { style: 'margin-top:12px' }, 'Отправить');
-  const out = el('div', { class: 'note', style: 'margin-top:8px' });
-  submit.onclick = async () => {
-    let correct = 0;
-    test.questions.forEach(q => {
-      if (answers[q.id] !== undefined && answers[q.id] === q.correct) correct++;
-    });
-    const res = { user: AppState.currentUser.username, testId: test.id, testTitle: test.title, correct, total: test.questions.length, time: Date.now() };
-    // save result in localStorage (append to logs as "finish")
-    const info = await collectClientInfo();
-    appendLog({ user: AppState.currentUser.username, testId: test.id, testTitle: test.title, ...info, event: 'finish', result: `${correct}/${test.questions.length}` });
-    out.innerHTML = `<strong>Результат:</strong> ${correct} из ${test.questions.length}`;
-    // show correct answers detail
-    const detail = el('div', { style: 'margin-top:8px' });
-    test.questions.forEach((q, i) => {
-      const p = el('div', { style: 'margin-top:6px' });
-      p.innerHTML = `${i+1}. ${q.text} <div class="small muted">Правильный: ${q.options[q.correct]} | Ваш ответ: ${(answers[q.id]!==undefined)?q.options[answers[q.id]]:'не отвечено'}</div>`;
-      detail.appendChild(p);
-    });
-    out.appendChild(detail);
-    // block further submits
-    submit.disabled = true;
-  };
-
-  c.appendChild(submit);
-  c.appendChild(out);
-  container.appendChild(c);
-}
-
-/* ---------- Parsing function for text-inserted tests ---------- */
-
-function parseTestFromText(rawText) {
-  // Split into lines, parse questions starting with "1)" "2)" or lines that don't start with '-'
-  const lines = rawText.split(/\r?\n/);
-  const questions = [];
-  let current = null;
-
-  for (let ln of lines) {
-    const line = ln.trim();
-    if (!line) continue;
-    // new question if "N)" at start
-    const qMatch = line.match(/^(\d+)\)\s*(.+)$/);
-    if (qMatch) {
-      if (current) questions.push(current);
-      current = { text: qMatch[2].trim(), options: [], correct: 0 };
-      continue;
+      requestAnimationFrame(drawStars);
     }
-    // or if line doesn't start with '-' but current is null, treat as question header
-    const simpleQ = line.match(/^Question[:\s-]*(.+)$/i);
-    if (simpleQ && !current) {
-      current = { text: simpleQ[1].trim(), options: [], correct: 0 };
-      continue;
+    drawStars();
+
+    // ====== Данные ======
+    const ADMIN = { username: "admin", password: "admin123" };
+    let users = JSON.parse(localStorage.getItem("users") || "[]");
+    let tests = JSON.parse(localStorage.getItem("tests") || "[]");
+    let currentUser = null;
+
+    // ====== Утилиты ======
+    function saveData() {
+      localStorage.setItem("users", JSON.stringify(users));
+      localStorage.setItem("tests", JSON.stringify(tests));
     }
-    // option
-    const optMatch = line.match(/^-+\s*(.+)$/);
-    if (optMatch && current) {
-      let optText = optMatch[1].trim();
-      let isCorrect = false;
-      // if '*' anywhere at end or inside marks correct
-      if (optText.endsWith('*')) { isCorrect = true; optText = optText.replace(/\*+$/, '').trim(); }
-      // also allow '(*)' at end or ' * ' marker
-      if (optText.endsWith('(*)')) { isCorrect = true; optText = optText.replace(/\(\*\)$/, '').trim(); }
-      if (optText.includes(' *')) { isCorrect = true; optText = optText.replace(/\s*\*+/, '').trim(); }
-      const idx = current.options.length;
-      current.options.push(optText);
-      if (isCorrect) current.correct = idx;
-      continue;
+
+    function $(id) { return document.getElementById(id); }
+
+    function renderLogin() {
+      const app = $("app");
+      app.innerHTML = `
+        <h2>Авторизация</h2>
+        <input id="login-username" placeholder="Логин"><br><br>
+        <input id="login-password" type="password" placeholder="Пароль"><br><br>
+        <button onclick="handleLogin()">Войти</button>
+      `;
     }
-    // fallback: if current is null treat line as question
-    if (!current) {
-      current = { text: line, options: [], correct: 0 };
-      continue;
-    }
-    // else if line not starting '-' maybe an additional option without dash — push as option
-    if (current && !line.startsWith('-')) {
-      // treat as option if it looks like "A) text" or similar
-      const altOpt = line.match(/^[A-Za-z]\)\s*(.+)$/);
-      if (altOpt) {
-        let optText = altOpt[1].trim();
-        let isCorrect = false;
-        if (optText.endsWith('*')) { isCorrect = true; optText = optText.replace(/\*+$/, '').trim(); }
-        const idx = current.options.length;
-        current.options.push(optText);
-        if (isCorrect) current.correct = idx;
+
+    function handleLogin() {
+      const username = $("login-username").value;
+      const password = $("login-password").value;
+
+      if (username === ADMIN.username && password === ADMIN.password) {
+        currentUser = { username: "admin", role: "admin" };
+        renderAdmin();
       } else {
-        // long-form continuation of question text
-        current.text += ' ' + line;
+        const user = users.find(u => u.username === username && u.password === password);
+        if (user) {
+          currentUser = user;
+          renderStudent();
+        } else {
+          alert("Неверные данные");
+        }
       }
     }
-  }
 
-  if (current) questions.push(current);
-  // basic validation: ensure each question has at least 2 options
-  return questions.filter(q => q.options && q.options.length >= 2);
-}
-
-/* ---------- Client info collection (IP + UA) ---------- */
-
-async function collectClientInfo() {
-  const ua = navigator.userAgent || '';
-  const time = new Date().toISOString();
-  let ip = 'unknown', city = '', country = '';
-  try {
-    // public IP + geo; use ipapi.co (no key for basic use) — may be rate-limited
-    const resp = await fetch('https://ipapi.co/json/');
-    if (resp.ok) {
-      const js = await resp.json();
-      ip = js.ip || ip; city = js.city || ''; country = js.country_name || js.country || '';
+    // ====== Админ ======
+    function renderAdmin() {
+      const app = $("app");
+      app.innerHTML = `
+        <h2>Админ-панель</h2>
+        <button onclick="renderCreateUser()">Создать пользователя</button>
+        <button onclick="renderCreateTest()">Создать тест</button>
+        <button onclick="renderHome()">Домой</button>
+      `;
     }
-  } catch (e) {
-    // fallback: unknown
-  }
-  return { ua, time, ip, city, country };
-}
 
-/* ---------- Utils: preview test ---------- */
-function showTestPreview(test) {
-  const w = window.open('', '_blank', 'width=800,height=600,scrollbars=yes');
-  const html = ['<html><head><meta charset="utf-8"><title>Просмотр теста</title><style>body{font-family:Inter, Arial;padding:14px} h2{margin-top:0} .q{margin-bottom:12px}</style></head><body>'];
-  html.push('<h2>' + (test.title || '') + '</h2>');
-  test.questions.forEach((q, i) => {
-    html.push('<div class="q"><strong>' + (i+1) + '. ' + q.text + '</strong><ul>');
-    q.options.forEach((opt, j) => {
-      let mark = (j === q.correct) ? ' <strong style="color:green">[правильно]</strong>' : '';
-      html.push('<li>' + opt + mark + '</li>');
-    });
-    html.push('</ul></div>');
-  });
-  html.push('</body></html>');
-  w.document.write(html.join(''));
-  w.document.close();
-}
+    function renderCreateUser() {
+      const app = $("app");
+      app.innerHTML = `
+        <h2>Создание пользователя</h2>
+        <input id="new-username" placeholder="Логин"><br><br>
+        <input id="new-password" type="password" placeholder="Пароль"><br><br>
+        <button onclick="createUser()">Создать</button>
+        <button onclick="renderAdmin()">Назад</button>
+      `;
+    }
 
-/* ---------- Initialize app ---------- */
+    function createUser() {
+      const username = $("new-username").value;
+      const password = $("new-password").value;
+      if (!username || !password) { alert("Заполните поля"); return; }
+      users.push({ username, password, role: "student" });
+      saveData();
+      alert("Пользователь создан");
+      renderAdmin();
+    }
 
-(async function init() {
-  await ensureInitialData();
-  // restore session
-  const sess = DB.get('sessions') || { current: null };
-  if (sess && sess.current) AppState.currentUser = sess.current;
-  // default page
-  if (!AppState.currentUser) AppState.page = 'home';
-  renderMain();
-  renderNav();
-})();
-</script>
+    function renderCreateTest() {
+      const app = $("app");
+      app.innerHTML = `
+        <h2>Создание теста</h2>
+        <textarea id="test-text" rows="10" style="width:100%" placeholder="Вопросы и ответы в формате:&#10;1) Вопрос&#10;- Ответ&#10;- Правильный ответ *"></textarea><br><br>
+        <button onclick="createTest()">Сохранить</button>
+        <button onclick="renderAdmin()">Назад</button>
+      `;
+    }
+
+    function createTest() {
+      const raw = $("test-text").value.trim();
+      if (!raw) { alert("Введите текст теста"); return; }
+      tests.push({ text: raw });
+      saveData();
+      alert("Тест сохранён");
+      renderAdmin();
+    }
+
+    // ====== Студент ======
+    function renderStudent() {
+      const app = $("app");
+      app.innerHTML = `<h2>Доступные тесты</h2>`;
+      if (tests.length === 0) {
+        app.innerHTML += `<p class="muted">Пока нет тестов</p>`;
+      } else {
+        tests.forEach((t, i) => {
+          const btn = document.createElement("button");
+          btn.textContent = "Тест " + (i+1);
+          btn.onclick = () => startTest(t.text);
+          app.appendChild(document.createElement("br"));
+          app.appendChild(btn);
+        });
+      }
+    }
+
+    function startTest(text) {
+      const app = $("app");
+      const lines = text.split("\n").map(l => l.trim()).filter(l => l);
+      let html = "<h2>Тест</h2><ol>";
+      lines.forEach(line => {
+        if (line.match(/^\d+\)/)) {
+          html += `<li>${line.replace(/^\d+\)\s*/, "")}</li>`;
+        } else if (line.startsWith("-")) {
+          html += `<li style="list-style:none;"><label>${line}</label></li>`;
+        }
+      });
+      html += "</ol><button onclick='renderStudent()'>Назад</button>";
+      app.innerHTML = html;
+    }
+
+    // ====== Домой ======
+    function renderHome() {
+      const app = $("app");
+      if (!currentUser) {
+        renderLogin();
+      } else if (currentUser.role === "admin") {
+        renderAdmin();
+      } else {
+        renderStudent();
+      }
+    }
+
+    renderHome();
+  </script>
 </body>
 </html>
