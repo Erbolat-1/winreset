@@ -1,5 +1,67 @@
 <!doctype html>
 <html lang="ru">
+  <script type="module">
+  // Firebase SDK
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, setDoc, doc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+  // Конфиг из консоли Firebase
+  const firebaseConfig = {
+    apiKey: "AIzaSyDr20MYdq_py2L-VkzPE85W7cJM_Yq3cdE",
+    authDomain: "fast-circle-448017-j1.firebaseapp.com",
+    projectId: "fast-circle-448017-j1",
+    storageBucket: "fast-circle-448017-j1.firebasestorage.app",
+    messagingSenderId: "438243655967",
+    appId: "1:438243655967:web:4b0ec3e85d616559a9302a",
+    measurementId: "G-Q8MYZTFP20"
+  };
+
+  // Инициализация
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // ======== Пример работы ========
+
+  // Добавить тест
+  async function saveTest() {
+    await addDoc(collection(db, "tests"), {
+      title: "Мой первый тест",
+      category: "История",
+      questions: [
+        { text: "Столица Франции?", options: ["Берлин", "Париж", "Лондон"], correct: 1 }
+      ]
+    });
+    alert("Тест сохранён в Firebase!");
+  }
+
+  // Получить тесты
+  async function loadTests() {
+    const querySnapshot = await getDocs(collection(db, "tests"));
+    let out = "";
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      out += `<li>${data.title} (${data.category})</li>`;
+    });
+    document.getElementById("tests").innerHTML = out;
+  }
+
+  // Запуск примеров
+  window.saveTest = saveTest;
+  window.loadTests = loadTests;
+</script>
+<body class="p-4">
+  <h1>Тестовая платформа с Firebase</h1>
+  <button onclick="saveTest()">Добавить тест</button>
+  <button onclick="loadTests()">Загрузить тесты</button>
+  <ul id="tests"></ul>
+</body>
+<body class="p-4">
+  <h1>Тестовая платформа с Firebase</h1>
+  <button onclick="saveTest()">Добавить тест</button>
+  <button onclick="loadTests()">Загрузить тесты</button>
+  <ul id="tests"></ul>
+</body>
+
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -784,3 +846,4 @@ function showTestPreview(test){
 </script>
 </body>
 </html>
+
