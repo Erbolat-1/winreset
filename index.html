@@ -4,13 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Платформа тестирования — демо (single file, cloud sync)</title>
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
 
 <!-- Firebase compat SDK (для простоты интеграции в single-file) -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -181,7 +174,13 @@ async function initFirebaseCloud() {
         }
       }
     };
-
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
     // subscribe to cloud documents and reflect changes locally
     const keys = ['users','tests','categories','logs','sessions'];
     keys.forEach(k => {
@@ -899,4 +898,5 @@ function showTestPreview(test){
 </script>
 </body>
 </html>
+
 
