@@ -1,902 +1,342 @@
 <!doctype html>
 <html lang="ru">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Платформа тестирования — демо (single file, cloud sync)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Тестовая платформа — Supabase</title>
 
-<!-- Firebase compat SDK (для простоты интеграции в single-file) -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <!-- Supabase SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/bundles/supabase.umd.min.js"></script>
 
-<style>
-  :root{
-    --bg:#ffffff; /* светлый фон по запросу */
-    --card:#fff;
-    --accent:#2563eb;
-    --accent-2:#1e40af;
-    --danger:#ef4444;
-    --muted:#6b7280;
-    --border:#e6eefc;
-  }
-  html,body{height:100%}
-  body{
-    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-    margin:0; background:linear-gradient(180deg,#fbfdff 0%, #ffffff 100%);
-    color:#111; min-height:100%;
-    -webkit-font-smoothing:antialiased;
-  }
-  .wrap{ max-width:1100px; margin:20px auto; padding:18px; }
-  .header{ display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:14px; }
-  h1{ margin:0; font-size:20px }
-  .small{ font-size:13px; color:var(--muted) }
-  .card{ background:var(--card); border-radius:10px; padding:14px; box-shadow:0 6px 18px rgba(15,23,42,0.06); border:1px solid #f3f6fb }
-  button{ cursor:pointer; border:0; background:var(--accent); color:#fff; padding:8px 12px; border-radius:8px; }
-  button.ghost{ background:transparent; color:var(--accent); border:1px solid var(--border); }
-  .cols{ display:flex; gap:12px; flex-wrap:wrap; }
-  .col{ flex:1; min-width:220px; }
-  input, select, textarea, .ce { width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border); box-sizing:border-box; font-size:14px; }
-  textarea{ min-height:120px; font-family:inherit; resize:vertical; }
-  .muted{ color:var(--muted) }
-  table{ width:100%; border-collapse:collapse; margin-top:10px }
-  th,td{ padding:8px 10px; text-align:left; border-bottom:1px solid #f1f5f9; font-size:14px }
-  .tiny{ font-size:12px; padding:6px 8px; border-radius:6px }
-  .field-row{ display:flex; gap:8px; align-items:center; margin-top:8px }
-  .field-row input[type="text"]{ flex:1 }
-  .nav { display:flex; gap:8px; align-items:center; }
-  .nav button{ background:transparent; color:var(--accent); border:1px solid transparent; padding:6px 8px; }
-  .nav button.active{ font-weight:600; border-bottom:2px solid var(--accent); color:var(--accent-2) }
-  .muted-note{ font-size:13px; color:var(--muted); margin-top:8px }
-  ol{ padding-left:18px; }
-  li .qtext{ font-weight:600; margin-bottom:6px }
-  .option-row{ display:flex; gap:8px; align-items:center; }
-  .option-row label{ display:flex; gap:8px; align-items:center; cursor:pointer; width:100% }
-  .option-row input[type="radio"]{ width:16px; height:16px; margin:0; }
-  .option-text{ flex:1; word-break:break-word }
-  .option-text[contenteditable]{ min-height:30px; padding:6px; border-radius:6px; border:1px dashed transparent; }
-  .option-text[contenteditable]:focus{ outline:none; border-color:#e2e8f0; background:#fbfdff }
-  .danger{ background:var(--danger); color:#fff }
-  .ok{ background:#10b981; color:#fff }
-  .kbd{ background:#f1f5f9; padding:2px 6px; border-radius:6px; font-size:12px }
-  .actions{ display:flex; gap:8px; flex-wrap:wrap; }
-  .right{ margin-left:auto }
-  .import-area{ margin-top:10px; display:flex; gap:8px; align-items:center }
-  .note-block{ margin-top:10px; font-size:13px; color:var(--muted) }
-  @media (max-width:720px){
-    .header{ flex-direction:column; align-items:flex-start; gap:6px }
-  }
-</style>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    #app { max-width: 960px; margin: auto; }
+    .card { padding: 15px; border: 1px solid #ccc; border-radius: 8px; margin: 10px 0; }
+    .btn { margin: 4px; padding: 6px 12px; cursor: pointer; }
+    .btn-red { background: #e74c3c; color: white; }
+    .btn-blue { background: #3498db; color: white; }
+    .btn-green { background: #2ecc71; color: white; }
+    .btn-yellow { background: #f1c40f; color: black; }
+    input, select, textarea { padding: 6px; margin: 4px; }
+  </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="header">
-      <div>
-        <h1>Платформа для зачётов — демо</h1>
-        <div class="small muted">Админская панель, загрузка тестов текстом, ручной редактор, экспорт/импорт</div>
-      </div>
-      <div class="nav">
-        <div id="current-user" class="small muted">Не вошёл</div>
-        <div id="nav-buttons"></div>
-      </div>
-    </div>
-
-    <div id="main" class="card">
-      <!-- Контент меняется скриптом -->
-    </div>
-
-    <div class="muted-note">Демо. Для синхронизации между устройствами используется Firebase Firestore. Настройте правила безопасности в проекте Firebase перед публичным использованием.</div>
-  </div>
+<div id="app">
+  <h1>Тестовая платформа (Supabase)</h1>
+  <div id="main"></div>
+</div>
 
 <script>
-/* ----------------------------------------------------------
-   Ваш исходный код (с минимальными правками) + Cloud Sync
-   Поддержка синхронизации ключей: users, tests, categories, logs, sessions
-   Использует Firestore document-per-key: collection "app", docs: "users","tests",...
-   ---------------------------------------------------------- */
+/* ==== Supabase Config ==== */
+const SUPABASE_URL = "https://peqqdikmngeswcxvesrt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlcXFkaWttbmdlc3djeHZlc3J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyNTk3NDgsImV4cCI6MjA3NDgzNTc0OH0.IZQ0_bT8r2Rw3DjODwdqeqz3wEqVCcMbtaXLbKTTegU";
+const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-/* ---------- Firebase config (используйте ваш проект) ----------
-   -> Замените конфиг ниже если хотите другой проект.
-   (вы ранее присылали такой конфиг — он вставлен сюда)
-----------------------------------------------------------------*/
-const firebaseConfig = {
-  apiKey: "AIzaSyDr20MYdq_py2L-VkzPE85W7cJM_Yq3cdE",
-  authDomain: "fast-circle-448017-j1.firebaseapp.com",
-  projectId: "fast-circle-448017-j1",
-  storageBucket: "fast-circle-448017-j1.firebasestorage.app",
-  messagingSenderId: "438243655967",
-  appId: "1:438243655967:web:4b0ec3e85d616559a9302a",
-  measurementId: "G-Q8MYZTFP20"
-};
-
-/* ---------- Storage adapter (localForage fallback) ---------- */
-const Storage = (function(){
-  if (window.localforage) {
-    return {
-      async get(k){ return await localforage.getItem(k) },
-      async set(k,v){ return await localforage.setItem(k,v) },
-      async remove(k){ return await localforage.removeItem(k) }
-    }
-  } else {
-    return {
-      async get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null } },
-      async set(k,v){ localStorage.setItem(k, JSON.stringify(v)); },
-      async remove(k){ localStorage.removeItem(k); }
-    }
+/* ==== Локальное хранилище ==== */
+const DB = new Map();
+const Storage = {
+  set: (k,v) => { localStorage.setItem(k, JSON.stringify(v)); DB.set(k,v); },
+  get: (k) => {
+    if(DB.has(k)) return DB.get(k);
+    try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; }
   }
-})();
-
-/* Save references to original storage methods (we'll wrap set later) */
-const _storageGet = Storage.get.bind(Storage);
+};
 const _storageSet = Storage.set.bind(Storage);
-const _storageRemove = Storage.remove.bind(Storage);
 
-/* Synchronous helpers (for UI etc) */
-const DB = {
-  get(key){ try { return JSON.parse(localStorage.getItem(key)) || null } catch(e){ return null } },
-  set(key, val){ localStorage.setItem(key, JSON.stringify(val)); },
-  async getAsync(key){ return await Storage.get(key) },
-  async setAsync(key, val){ return await Storage.set(key, val) },
-  remove(key){ localStorage.removeItem(key) }
-};
+/* ==== Облако: upsert ==== */
+async function supaSaveKV(key, value) {
+  const payload = { key, value, ts: new Date().toISOString() };
+  const { error } = await supabase.from("kv_store").upsert(payload, { onConflict: "key" });
+  if (error) console.warn("supaSaveKV error", error);
+}
 
-/* ---------- Cloud sync layer (Firestore) ---------- */
-let cloud = {
-  ready: false,
-  db: null,
-  // will be set to firebase app / firestore instance
-};
-
-async function initFirebaseCloud() {
-  try {
-    // Initialize Firebase app
-    if (!window.firebase || !firebase.apps) {
-      console.warn('Firebase SDK not loaded - cloud sync disabled');
-      cloud.ready = false;
-      return;
-    }
-    if (!firebase.apps.length) {
-      firebase.initializeApp(firebaseConfig);
-    }
-    cloud.db = firebase.firestore();
-    cloud.ready = true;
-    console.log('Cloud: Firestore initialized');
-
-    // Wrap Storage.set so that writes additionally push to Firestore
-    Storage.set = async function(key, value) {
-      // first write locally (localforage or localStorage)
-      await _storageSet(key, value);
-      // then attempt to write to cloud (document with { value, ts })
-      if (cloud.ready && cloud.db) {
-        try {
-          await cloud.db.collection('app').doc(key).set({ value: value, ts: Date.now() }, { merge: true });
-        } catch (e) {
-          console.warn('Cloud write failed for', key, e);
-        }
+/* ==== Подписка на изменения ==== */
+async function initSupabaseCloud() {
+  supabase.channel("kv-store")
+    .on("postgres_changes", { event: "*", schema: "public", table: "kv_store" }, payload => {
+      if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+        const k = payload.new.key;
+        const v = payload.new.value;
+        DB.set(k,v);
+        localStorage.setItem(k, JSON.stringify(v));
+        console.log("Обновлено из облака:", k);
+        renderMain();
       }
-    };
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-    // subscribe to cloud documents and reflect changes locally
-    const keys = ['users','tests','categories','logs','sessions'];
-    keys.forEach(k => {
-      try {
-        cloud.db.collection('app').doc(k).onSnapshot(doc => {
-          if (!doc.exists) return;
-          const cloudData = doc.data().value;
-          if (cloudData === undefined) return;
-          // compare with local; if differs, update local and in-memory DB copy
-          const local = DB.get(k);
-          try {
-            const localStr = JSON.stringify(local);
-            const cloudStr = JSON.stringify(cloudData);
-            if (localStr !== cloudStr) {
-              // update local storage and DB cache
-              DB.set(k, cloudData);
-              localStorage.setItem(k, JSON.stringify(cloudData));
-              console.log('Cloud -> Local sync:', k);
-              // if UI is loaded, re-render
-              try { if (typeof renderMain === 'function') { renderMain(); renderNav(); } } catch(e){}
-            }
-          } catch(e){ console.warn('sync compare error', e); }
-        }, err => {
-          console.warn('onSnapshot error for', k, err);
-        });
-      } catch(e){ console.warn('subscribe error for', k, e); }
-    });
-
-    // Attempt initial read: if cloud has data and local is empty, populate local
-    for (const k of ['users','tests','categories','logs','sessions']) {
-      try {
-        const doc = await cloud.db.collection('app').doc(k).get();
-        if (doc.exists) {
-          const cloudData = doc.data().value;
-          if (cloudData !== undefined) {
-            const local = DB.get(k);
-            if (!local) {
-              DB.set(k, cloudData);
-              localStorage.setItem(k, JSON.stringify(cloudData));
-            }
-          }
-        }
-      } catch(e){ /* ignore initial read errors */ }
-    }
-
-  } catch (e) {
-    console.warn('initFirebaseCloud error', e);
-    cloud.ready = false;
-  }
+      if (payload.eventType === "DELETE") {
+        const k = payload.old.key;
+        DB.delete(k);
+        localStorage.removeItem(k);
+        console.log("Удалено из облака:", k);
+        renderMain();
+      }
+    })
+    .subscribe();
+  console.log("✅ Supabase realtime активен");
 }
 
-/* ---------- Initial data (local-first, cloud will sync) ---------- */
-async function ensureInitialData(){
-  // prefer async Storage (keeps compatibility)
-  let users = await Storage.get('users');
-  if (!users) {
-    const adminHash = await hashHex('admin123');
-    users = [{ username:'admin', passwordHash:adminHash, role:'admin', active:true }];
-    await Storage.set('users', users);
-    DB.set('users', users);
-  } else {
-    DB.set('users', users);
-  }
-  let cats = await Storage.get('categories');
-  if (!cats) { cats = ['Общий']; await Storage.set('categories', cats); DB.set('categories', cats) } else DB.set('categories', cats);
-  let tests = await Storage.get('tests');
-  if (!tests) { tests = {}; await Storage.set('tests', tests); DB.set('tests', tests) } else DB.set('tests', tests);
-  let logs = await Storage.get('logs');
-  if (!logs) { logs = []; await Storage.set('logs', logs); DB.set('logs', logs) } else DB.set('logs', logs);
-  let sess = await Storage.get('sessions');
-  if (!sess) { sess = { current:null }; await Storage.set('sessions', sess); DB.set('sessions', sess) } else DB.set('sessions', sess);
-}
-
-/* ---------- Password hash (SHA-256) ---------- */
-async function hashHex(password){
-  try {
-    const enc = new TextEncoder();
-    const data = enc.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2,'0')).join('');
-  } catch(e){
-    return btoa(password);
-  }
-}
-
-/* ---------- Shortcuts for storage ops (now Storage.set will push to cloud when available) ---------- */
-function loadUsers(){ return DB.get('users') || [] }
-async function saveUsersAsync(users){ DB.set('users', users); await Storage.set('users', users); }
-function saveUsers(users){ DB.set('users', users); localStorage.setItem('users', JSON.stringify(users)); if (cloud.ready && cloud.db) Storage.set('users', users).catch(()=>{}); }
-function loadTests(){ return DB.get('tests') || {} }
-async function saveTestsAsync(tests){ DB.set('tests', tests); await Storage.set('tests', tests); }
-function saveTests(tests){ DB.set('tests', tests); localStorage.setItem('tests', JSON.stringify(tests)); if (cloud.ready && cloud.db) Storage.set('tests', tests).catch(()=>{}); }
-function loadCategories(){ return DB.get('categories') || [] }
-async function saveCategoriesAsync(cats){ DB.set('categories', cats); await Storage.set('categories', cats); }
-function saveCategories(cats){ DB.set('categories', cats); localStorage.setItem('categories', JSON.stringify(cats)); if (cloud.ready && cloud.db) Storage.set('categories', cats).catch(()=>{}); }
-function appendLog(entry){ const logs = DB.get('logs') || []; logs.push(entry); DB.set('logs', logs); localStorage.setItem('logs', JSON.stringify(logs)); Storage.set('logs', logs).catch(()=>{}); }
-
-/* ---------- App state ---------- */
-let AppState = {
-  page:'home',
-  currentUser:null,
-  selectedCategory:null,
-  selectedTestId:null
+/* ==== Переписываем Storage.set ==== */
+Storage.set = async function(key, value) {
+  _storageSet(key, value); // локально
+  await supaSaveKV(key, value); // в облако
 };
 
-/* ---------- Small DOM builder ---------- */
-function el(tag, props={}, children=''){
-  const node = document.createElement(tag);
-  for(const k in props){
-    if(k==='class') node.className = props[k];
-    else if(k==='html') node.innerHTML = props[k];
-    else node.setAttribute(k, props[k]);
-  }
-  if(typeof children === 'string') node.appendChild(document.createTextNode(children));
-  else if(Array.isArray(children)) children.forEach(c=> node.appendChild(c));
-  else if(children instanceof Node) node.appendChild(children);
-  return node;
+/* ==== Данные ==== */
+if (!Storage.get("users")) {
+  Storage.set("users", [
+    { username: "admin", password: "12345", role: "admin" },
+    { username: "student", password: "1111", role: "student" }
+  ]);
 }
+if (!Storage.get("categories")) Storage.set("categories", []);
+if (!Storage.get("tests")) Storage.set("tests", []);
 
-/* ---------- UI rendering and pages (unchanged logic, only storage calls go via Storage) ---------- */
+/* ==== Текущий пользователь ==== */
+let currentUser = null;
+let currentTest = null;
 
-function renderNav(){
-  const navRoot = document.getElementById('nav-buttons');
-  navRoot.innerHTML = '';
-  const userLabel = document.getElementById('current-user');
-  const u = AppState.currentUser;
-  userLabel.innerText = u ? `${u.username} (${u.role})` : 'Не вошёл';
-  const addBtn = (title, key) => {
-    const b = el('button', { class: (AppState.page===key ? 'active' : '') }, title);
-    b.onclick = ()=>{ AppState.page = key; renderMain(); renderNav(); };
-    navRoot.appendChild(b);
-  };
-  if(!u){
-    addBtn('Главная','home');
-    addBtn('Вход','login');
+/* ==== UI ==== */
+function renderMain() {
+  const main = document.getElementById("main");
+  main.innerHTML = "";
+
+  if (!currentUser) return renderLogin();
+
+  const h = document.createElement("h3");
+  h.textContent = `Здравствуйте, ${currentUser.username} (${currentUser.role})`;
+  main.appendChild(h);
+
+  if (currentUser.role === "admin") {
+    renderAdminPanel(main);
   } else {
-    addBtn('Главная','home');
-    if(u.role==='admin'){
-      addBtn('Админ','admin');
-      addBtn('Пользователи','admin_users');
-      addBtn('Редактор','admin_editor');
-      addBtn('Тесты','admin_tests');
-      addBtn('Логи','admin_logs');
-    } else {
-      addBtn('Мои тесты','student_dashboard');
-    }
-    const logout = el('button', {}, 'Выйти');
-    logout.onclick = async ()=>{ AppState.currentUser = null; DB.set('sessions',{current:null}); await Storage.set('sessions',{current:null}); AppState.page='home'; renderMain(); renderNav(); }
-    logout.style.marginLeft = '8px';
-    navRoot.appendChild(logout);
+    renderStudentPanel(main);
   }
 }
 
-async function renderMain(){
-  const root = document.getElementById('main');
-  root.innerHTML = '';
-  try {
-    const s = await Storage.get('sessions');
-    if(s && s.current && !AppState.currentUser) AppState.currentUser = s.current;
-  } catch(e){}
-  renderNav();
-  if(AppState.page==='home') return renderHome(root);
-  if(AppState.page==='login') return renderLogin(root);
-  if(AppState.page==='admin') return renderAdminWelcome(root);
-  if(AppState.page==='admin_users') return renderAdminUsers(root);
-  if(AppState.page==='admin_editor') return renderAdminEditor(root);
-  if(AppState.page==='admin_tests') return renderAdminTests(root);
-  if(AppState.page==='admin_logs') return renderAdminLogs(root);
-  if(AppState.page==='student_dashboard') return renderStudentDashboard(root);
-  if(AppState.page==='take_test') return renderTakeTest(root);
-  root.innerText = 'Страница не найдена';
+/* ==== Login ==== */
+function renderLogin() {
+  const main = document.getElementById("main");
+  main.innerHTML = `
+    <div class="card">
+      <h3>Вход</h3>
+      <input id="login-user" placeholder="Логин"><br>
+      <input id="login-pass" type="password" placeholder="Пароль"><br>
+      <button class="btn btn-blue" onclick="handleLogin()">Войти</button>
+    </div>
+  `;
 }
-
-/* Pages: home, login, admin, users, editor, tests, logs, student_dashboard, take_test
-   (Логика и верстка сохранены из вашего кода — только обращение к хранилищу идёт через Storage/DB) */
-
-function renderHome(container){
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Категории тестов'));
-  const cats = loadCategories();
-  if(!cats || cats.length===0){
-    c.appendChild(el('p', { class: 'muted' }, 'Пока нет категорий — админ может создать.'));
-  } else {
-    const list = el('div', { class: 'cols', style:'margin-top:12px' });
-    cats.forEach(cat=>{
-      const card = el('div', { class: 'card col' });
-      card.appendChild(el('div', {}, el('strong', {}, cat)));
-      const tests = loadTests()[cat] || [];
-      card.appendChild(el('div', { class:'small muted' }, `Тестов: ${tests.length}`));
-      const row = el('div', { class:'field-row', style:'margin-top:8px' });
-      if(AppState.currentUser){
-        const viewBtn = el('button', {}, 'Посмотреть тесты');
-        viewBtn.onclick = ()=>{ AppState.selectedCategory = cat; AppState.page='admin_tests'; renderMain(); };
-        row.appendChild(viewBtn);
-      } else {
-        const loginBtn = el('button', {}, 'Войти чтобы увидеть тесты');
-        loginBtn.onclick = ()=>{ AppState.page='login'; renderMain(); };
-        row.appendChild(loginBtn);
-      }
-      card.appendChild(row);
-      list.appendChild(card);
-    });
-    c.appendChild(list);
-  }
-  c.appendChild(el('hr', { style:'margin:12px 0' }));
-  c.appendChild(el('p', { class:'small muted' }, 'Если вы студент — администратор должен создать вам учётную запись и включить доступ. (Синхронизация: Firebase)'));
-  container.appendChild(c);
-}
-
-function renderLogin(container){
-  const wrap = el('div');
-  wrap.appendChild(el('h2', {}, 'Вход'));
-  wrap.appendChild(el('div', { class:'small muted' }, 'Вход только для созданных администратором пользователей.'));
-  const form = el('div', { style:'margin-top:12px' });
-  const inpUser = el('input', { placeholder:'Логин', id:'inp-login' });
-  const inpPass = el('input', { placeholder:'Пароль', type:'password', id:'inp-pass' });
-  const loginBtn = el('button', {}, 'Войти');
-  const note = el('div', { class:'note-block', id:'login-note' }, '');
-  loginBtn.onclick = async ()=>{
-    const username = inpUser.value.trim();
-    const password = inpPass.value;
-    if(!username || !password){ note.innerText = 'Введите логин и пароль'; return; }
-    const users = await Storage.get('users') || loadUsers();
-    const u = (users || []).find(x => x.username === username);
-    if(!u){ note.innerText = 'Пользователь не найден'; return; }
-    if(!u.active){ note.innerText = 'Доступ запрещён администратором'; return; }
-    const passHash = await hashHex(password);
-    if(passHash !== u.passwordHash){ note.innerText = 'Неверный пароль'; return; }
-    AppState.currentUser = { username:u.username, role:u.role };
-    DB.set('sessions',{ current: AppState.currentUser });
-    await Storage.set('sessions',{ current: AppState.currentUser });
-    note.innerText = 'Успешный вход';
-    AppState.page = (u.role==='admin') ? 'admin' : 'student_dashboard';
-    renderMain(); renderNav();
-  };
-  form.appendChild(inpUser);
-  form.appendChild(el('div', { class:'field-row' }, inpPass));
-  form.appendChild(el('div', { style:'margin-top:10px' }, loginBtn));
-  form.appendChild(note);
-  wrap.appendChild(form);
-  container.appendChild(wrap);
-}
-
-function renderAdminWelcome(container){
-  if(!AppState.currentUser || AppState.currentUser.role!=='admin'){
-    container.appendChild(el('div', {}, 'Доступ запрещён — войдите как админ'));
-    return;
-  }
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Админ — панель управления'));
-  c.appendChild(el('div', { class:'small muted' }, 'Используйте меню сверху для управления пользователями, тестами и логами.'));
-  const tools = el('div', { class:'card', style:'margin-top:12px' });
-  tools.appendChild(el('h3', {}, 'Экспорт / Импорт данных (для синхронизации между устройствами)'));
-  const expBtn = el('button', {}, 'Экспорт всех данных (.json)');
-  expBtn.onclick = async ()=>{
-    const users = await Storage.get('users'); const tests = await Storage.get('tests'); const cats = await Storage.get('categories'); const logs = await Storage.get('logs');
-    const payload = { users, tests, categories:cats, logs, exportedAt: new Date().toISOString() };
-    const data = JSON.stringify(payload, null, 2);
-    const blob = new Blob([data], { type:'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'platform-data.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-  };
-  const impInput = el('input', { type:'file', accept:'.json' });
-  impInput.onchange = async (ev)=>{
-    const f = ev.target.files[0]; if(!f) return;
-    const txt = await f.text();
-    try {
-      const obj = JSON.parse(txt);
-      if(!confirm('При импортe данные перезапишут текущие (пользователи, тесты, категории, логи). Продолжить?')) return;
-      await Storage.set('users', obj.users || []);
-      await Storage.set('tests', obj.tests || {});
-      await Storage.set('categories', obj.categories || []);
-      await Storage.set('logs', obj.logs || []);
-      DB.set('users', obj.users || []); DB.set('tests', obj.tests || {}); DB.set('categories', obj.categories || []); DB.set('logs', obj.logs || []);
-      alert('Импорт выполнен. Обновите страницу при необходимости.');
-      renderMain(); renderNav();
-    } catch(e){ alert('Ошибка чтения JSON: '+e.message) }
-  };
-  tools.appendChild(expBtn);
-  tools.appendChild(el('div',{ class:'import-area' }, impInput));
-  c.appendChild(tools);
-  container.appendChild(c);
-}
-
-async function renderAdminUsers(container){
-  if(!AppState.currentUser || AppState.currentUser.role!=='admin'){
-    container.appendChild(el('div', {}, 'Доступ запрещён — войдите как админ'));
-    return;
-  }
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Управление пользователями'));
-  c.appendChild(el('div', { class:'small muted' }, 'Добавляйте студентов, включайте/отключайте доступ. Пароли хранятся в виде SHA-256 хеша.'));
-  const users = await Storage.get('users') || loadUsers();
-
-  const table = el('table', { style:'margin-top:12px' });
-  const head = el('tr');
-  ['Логин','Роль','Доступ','Действия'].forEach(h=> head.appendChild(el('th', {}, h)));
-  table.appendChild(head);
-  const tbody = el('tbody');
-  users.forEach(u=>{
-    const tr = el('tr');
-    tr.appendChild(el('td', {}, u.username));
-    tr.appendChild(el('td', {}, u.role));
-    tr.appendChild(el('td', {}, u.active ? 'Разрешён' : 'Отключён'));
-    const actions = el('td');
-    const toggle = el('button', { class:'tiny' }, u.active ? 'Отключить' : 'Разрешить');
-    toggle.onclick = async ()=>{
-      const all = await Storage.get('users') || [];
-      const item = all.find(x=>x.username===u.username);
-      if(item){ item.active = !item.active; await Storage.set('users', all); DB.set('users', all); renderMain(); }
-    };
-    const del = el('button', { class:'tiny', style:'margin-left:6px;background:#fee2e2;color:#991b1b' }, 'Удалить');
-    del.onclick = async ()=>{
-      if(!confirm('Удалить пользователя?')) return;
-      const all = (await Storage.get('users') || []).filter(x=>x.username!==u.username);
-      await Storage.set('users', all); DB.set('users', all); renderMain();
-    };
-    actions.appendChild(toggle); actions.appendChild(del);
-    tr.appendChild(actions);
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  c.appendChild(table);
-
-  c.appendChild(el('hr',{ style:'margin:12px 0' }));
-  c.appendChild(el('h3', {}, 'Добавить студента'));
-  const login = el('input', { placeholder:'Логин (напр. student1)' });
-  const pass = el('input', { type:'password', placeholder:'Пароль' });
-  const addBtn = el('button', {}, 'Добавить');
-  const addMsg = el('div', { class:'note-block' });
-  addBtn.onclick = async ()=>{
-    const username = login.value.trim(); const password = pass.value;
-    if(!username || !password){ addMsg.innerText='Введите логин и пароль'; return; }
-    let users = await Storage.get('users') || [];
-    if(users.find(x=>x.username===username)){ addMsg.innerText='Пользователь уже существует'; return; }
-    const h = await hashHex(password);
-    users.push({ username, passwordHash:h, role:'student', active:false });
-    await Storage.set('users', users); DB.set('users', users);
-    login.value=''; pass.value=''; addMsg.innerText='Студент добавлен (по умолчанию отключён). Включите доступ.';
+function handleLogin() {
+  const u = document.getElementById("login-user").value;
+  const p = document.getElementById("login-pass").value;
+  const users = Storage.get("users") || [];
+  const found = users.find(x => x.username===u && x.password===p);
+  if (found) {
+    currentUser = found;
     renderMain();
-  };
-  c.appendChild(login); c.appendChild(pass); c.appendChild(addBtn); c.appendChild(addMsg);
-  container.appendChild(c);
+  } else {
+    alert("Неверный логин/пароль");
+  }
 }
 
-async function renderAdminEditor(container){
-  if(!AppState.currentUser || AppState.currentUser.role!=='admin'){
-    container.appendChild(el('div', {}, 'Доступ запрещён — войдите как админ'));
-    return;
-  }
-  const c = el('div');
-  c.appendChild(el('h2', {}, 'Редактор тестов'));
-  c.appendChild(el('div', { class:'small muted' }, 'Можно вставить весь тест текстом (с * у правильного варианта) или создать вручную.'));
-
-  const textArea = el('textarea', { placeholder:`Формат:
-1) Вопрос?
-- Вариант1
-- Вариант2 *
-- Вариант3
-
-(Добавляйте * у правильного варианта)` });
-  const catSel = el('select'); catSel.appendChild(el('option', { value:'' }, 'Выберите категорию'));
-  (loadCategories()||[]).forEach(cat => catSel.appendChild(el('option',{ value:cat }, cat)));
-  const newCat = el('input', { placeholder:'Или введите новую категорию' });
-  const parseBtn = el('button', {}, 'Импортировать текстом');
-  const parseMsg = el('div', { class:'note-block' });
-  parseBtn.onclick = async ()=>{
-    const raw = textArea.value.trim();
-    if(!raw){ parseMsg.innerText = 'Вставьте тест'; return; }
-    const parsed = parseTestFromText(raw);
-    if(!parsed || parsed.length===0){ parseMsg.innerText='Не удалось распарсить (проверьте формат)'; return; }
-    let category = catSel.value || newCat.value.trim();
-    if(!category){ parseMsg.innerText='Выберите или введите категорию'; return; }
-    const tests = await Storage.get('tests') || loadTests();
-    if(!tests[category]) tests[category] = [];
-    const id = 't_'+Date.now();
-    tests[category].push({ id, title: 'Тест ' + (new Date()).toLocaleString(), category, questions: parsed });
-    await Storage.set('tests', tests); DB.set('tests', tests);
-    let cats = await Storage.get('categories') || loadCategories();
-    if(!cats.includes(category)){ cats.push(category); await Storage.set('categories', cats); DB.set('categories', cats); }
-    parseMsg.innerText = 'Тест сохранён';
-    textArea.value=''; newCat.value=''; catSel.value='';
-    renderMain();
-  };
-
-  c.appendChild(el('div', { class:'field-row' }, catSel));
-  c.appendChild(el('div', { class:'field-row', style:'margin-top:8px' }, newCat));
-  c.appendChild(textArea); c.appendChild(el('div', { style:'margin-top:8px' }, parseBtn)); c.appendChild(parseMsg);
-
-  c.appendChild(el('hr',{ style:'margin:12px 0' }));
-  c.appendChild(el('h3', {}, 'Ручной конструктор теста'));
-  const titleIn = el('input', { placeholder:'Название теста' });
-  const catIn = el('input', { placeholder:'Категория теста' });
-  const questionsBox = el('div', { style:'margin-top:10px' });
-  const addQBtn = el('button', {}, 'Добавить вопрос (черновик ниже)');
-  let draft = { text:'', options:['',''], correct:0 };
-  function renderDraft(){
-    questionsBox.innerHTML = '';
-    const qbox = el('div', { class:'card' });
-    qbox.appendChild(el('input', { class:'ce', placeholder:'Текст вопроса', value:draft.text, id:'draft-text' }));
-    qbox.querySelector('#draft-text').addEventListener('input', (e)=> draft.text = e.target.value);
-    const optsWrap = el('div', { style:'margin-top:8px' });
-    draft.options.forEach((opt,i)=>{
-      const row = el('div', { class:'option-row' });
-      const radio = el('input', { type:'radio', name:'draft-correct', checked: draft.correct===i });
-      radio.onchange = ()=> draft.correct = i;
-      const optText = el('div', { class:'option-text', contenteditable:true }, opt || 'Введите вариант');
-      optText.addEventListener('input', ()=> draft.options[i] = optText.innerText.trim());
-      const delBtn = el('button', { class:'tiny', style:'background:#fee2e2;color:#991b1b' }, 'x');
-      delBtn.onclick = ()=>{ draft.options.splice(i,1); if(draft.correct>=draft.options.length) draft.correct=0; renderDraft(); };
-      row.appendChild(radio); row.appendChild(optText); row.appendChild(delBtn);
-      optsWrap.appendChild(row);
-    });
-    const addOpt = el('button', { class:'tiny', style:'margin-top:8px' }, 'Добавить вариант');
-    addOpt.onclick = ()=>{ draft.options.push(''); renderDraft(); }
-    qbox.appendChild(optsWrap); qbox.appendChild(addOpt);
-    const addToTest = el('button', { style:'margin-top:10px' }, 'Добавить вопрос в тест');
-    addToTest.onclick = ()=>{
-      if(!draft.text.trim()){ alert('Введите текст вопроса'); return; }
-      if(draft.options.length<2){ alert('Минимум 2 варианта'); return; }
-      manualQuestions.push({ id:'q_'+Date.now(), text: draft.text.trim(), options: draft.options.map(x=>x.trim()), correct: draft.correct });
-      draft = { text:'', options:['',''], correct:0 };
-      renderDraft(); renderManualList();
-    }
-    qbox.appendChild(addToTest);
-    questionsBox.appendChild(qbox);
-  }
-  let manualQuestions = [];
-  function renderManualList(){
-    const box = el('div', { style:'margin-top:12px' });
-    box.appendChild(el('h4', {}, `Вопросы (${manualQuestions.length})`));
-    const list = el('ol');
-    manualQuestions.forEach((q,idx)=>{
-      const li = el('li', {}, `${idx+1}. ${q.text} (${q.options.length} вариантов)`);
-      list.appendChild(li);
-    });
-    box.appendChild(list);
-    const saveTestBtn = el('button', { style:'margin-top:8px' }, 'Сохранить тест');
-    saveTestBtn.onclick = async ()=>{
-      const title = titleIn.value.trim(); const cat = (catIn.value.trim()||'Общий');
-      if(!title){ alert('Введите название теста'); return; }
-      if(manualQuestions.length===0){ alert('Добавьте хотя бы один вопрос'); return; }
-      const tests = await Storage.get('tests') || loadTests();
-      if(!tests[cat]) tests[cat] = [];
-      tests[cat].push({ id:'t_'+Date.now(), title, category:cat, questions: manualQuestions });
-      await Storage.set('tests', tests); DB.set('tests', tests);
-      let cats = await Storage.get('categories') || loadCategories();
-      if(!cats.includes(cat)){ cats.push(cat); await Storage.set('categories', cats); DB.set('categories', cats); }
-      manualQuestions = []; titleIn.value=''; catIn.value=''; renderMain();
-      alert('Тест сохранён');
-    }
-    box.appendChild(saveTestBtn);
-    questionsBox.appendChild(box);
-  }
-  addQBtn.onclick = ()=> renderDraft();
-  c.appendChild(el('div', { class:'field-row' }, titleIn));
-  c.appendChild(el('div', { class:'field-row', style:'margin-top:8px' }, catIn));
-  c.appendChild(addQBtn);
-  c.appendChild(questionsBox);
-  renderDraft(); renderManualList();
-
-  container.appendChild(c);
+/* ==== Панель админа ==== */
+function renderAdminPanel(main) {
+  const block = document.createElement("div");
+  block.innerHTML = `
+    <button class="btn btn-green" onclick="renderUsers()">Пользователи</button>
+    <button class="btn btn-yellow" onclick="renderCategories()">Категории</button>
+    <button class="btn btn-blue" onclick="renderTests()">Тесты</button>
+    <button class="btn btn-red" onclick="currentUser=null;renderMain()">Выход</button>
+  `;
+  main.appendChild(block);
 }
 
-async function renderAdminTests(container){
-  if(!AppState.currentUser) { container.appendChild(el('div', {}, 'Войдите')); return; }
-  const tests = await Storage.get('tests') || loadTests();
-  const cats = Object.keys(tests);
-  const c = el('div'); c.appendChild(el('h2', {}, 'Менеджер тестов'));
-  if(cats.length===0){ c.appendChild(el('p', { class:'muted' }, 'Тесты не созданы')); container.appendChild(c); return; }
-  cats.forEach(cat=>{
-    const block = el('div', { class:'card', style:'margin-top:12px' });
-    block.appendChild(el('div', {}, el('strong', {}, cat)));
-    const list = el('div', { style:'margin-top:8px' });
-    tests[cat].forEach(t=>{
-      const row = el('div', { class:'field-row', style:'margin-top:8px' });
-      row.appendChild(el('div', {}, t.title + ' ('+t.questions.length+' вопр.)'));
-      const preview = el('button', { class:'tiny' }, 'Просмотр');
-      preview.onclick = ()=> showTestPreview(t);
-      const edit = el('button', { class:'tiny', style:'margin-left:6px;background:#fff;color:var(--accent);border:1px solid var(--border)' }, 'Редактировать (внешне)');
-      edit.onclick = ()=> { AppState.selectedCategory = cat; AppState.selectedTestId = t.id; AppState.page='admin_editor'; alert('Для быстрой правки откройте "Просмотр" и редактируйте в ручном редакторе.'); }
-      const del = el('button', { class:'tiny', style:'margin-left:6px;background:#fee2e2;color:#991b1b' }, 'Удалить');
-      del.onclick = async ()=>{
-        if(!confirm('Удалить тест?')) return;
-        const all = (await Storage.get('tests')) || {};
-        all[cat] = (all[cat]||[]).filter(x=>x.id!==t.id);
-        if((all[cat]||[]).length===0) delete all[cat];
-        await Storage.set('tests', all); DB.set('tests', all); renderMain();
-      };
-      const makePublic = el('button', { class:'tiny', style:'margin-left:6px;background:#e6f6ea;color:#065f46' }, 'Доступен студентам');
-      makePublic.onclick = ()=> alert('В демо тесты по умолчанию доступны студентам после добавления.');
-      row.appendChild(preview); row.appendChild(edit); row.appendChild(makePublic); row.appendChild(del);
-      list.appendChild(row);
-    });
-    block.appendChild(list); c.appendChild(block);
+/* ==== Пользователи ==== */
+function renderUsers() {
+  const main = document.getElementById("main");
+  const users = Storage.get("users") || [];
+  main.innerHTML = `<h3>Пользователи</h3>`;
+
+  users.forEach((u,i)=>{
+    const div = document.createElement("div");
+    div.className = "card";
+    div.textContent = `${u.username} (${u.role})`;
+    main.appendChild(div);
   });
-  container.appendChild(c);
-}
-
-async function renderAdminLogs(container){
-  if(!AppState.currentUser || AppState.currentUser.role!=='admin'){ container.appendChild(el('div', {}, 'Доступ запрещён')); return; }
-  const c = el('div'); c.appendChild(el('h2', {}, 'Мониторинг и логи'));
-  c.appendChild(el('div', { class:'small muted' }, 'Записи о стартах/окончаниях тестов (IP/UA могут быть ограничены браузером).'));
-  const logs = await Storage.get('logs') || (DB.get('logs')||[]);
-  if(!logs || logs.length===0) c.appendChild(el('p', { class:'muted' }, 'Логов пока нет'));
-  else {
-    const table = el('table');
-    const headRow = el('tr');
-    ['Время','Пользователь','Тест','IP','Город','Страна','UA','Событие','Результат'].forEach(h=> headRow.appendChild(el('th', {}, h)));
-    table.appendChild(headRow);
-    logs.slice().reverse().forEach(l=>{
-      const r = el('tr');
-      r.appendChild(el('td', {}, (new Date(l.time||l.uaTime||Date.now())).toLocaleString()));
-      r.appendChild(el('td', {}, l.user||'-'));
-      r.appendChild(el('td', {}, l.testTitle||'-'));
-      r.appendChild(el('td', {}, l.ip||'-'));
-      r.appendChild(el('td', {}, l.city||'-'));
-      r.appendChild(el('td', {}, l.country||'-'));
-      r.appendChild(el('td', {}, (l.ua||'-').slice(0,60)));
-      r.appendChild(el('td', {}, l.event||'-'));
-      r.appendChild(el('td', {}, l.result||'-'));
-      table.appendChild(r);
-    });
-    c.appendChild(table);
-  }
-  const clearBtn = el('button', { style:'margin-top:10px;background:#fee2e2;color:#991b1b' }, 'Очистить логи');
-  clearBtn.onclick = async ()=>{ if(!confirm('Очистить все логи?')) return; await Storage.set('logs', []); DB.set('logs', []); renderMain(); }
-  c.appendChild(clearBtn);
-  container.appendChild(c);
-}
-
-async function renderStudentDashboard(container){
-  if(!AppState.currentUser){ container.appendChild(el('div', {}, 'Войдите')); return; }
-  const c = el('div'); c.appendChild(el('h2', {}, 'Доступные тесты'));
-  c.appendChild(el('div', { class:'small muted' }, 'Выберите категорию и тест.'));
-  const cats = await Storage.get('categories') || loadCategories();
-  if(!cats || cats.length===0) c.appendChild(el('p', { class:'muted' }, 'Пока нет тестов'));
-  else {
-    cats.forEach(cat=>{
-      const tests = (loadTests()[cat] || []);
-      if(tests.length===0) return;
-      const block = el('div', { class:'card', style:'margin-top:10px' });
-      block.appendChild(el('div', {}, el('strong', {}, cat)));
-      tests.forEach(t=>{
-        const row = el('div', { class:'field-row', style:'margin-top:8px' });
-        row.appendChild(el('div', {}, t.title + ' (' + t.questions.length + ')'));
-        const start = el('button', { class:'tiny' }, 'Начать');
-        start.onclick = async ()=>{
-          AppState.selectedCategory = cat; AppState.selectedTestId = t.id;
-          const info = await collectClientInfo();
-          appendLog(Object.assign({ user: AppState.currentUser.username, testId:t.id, testTitle:t.title, event:'start' }, info));
-          AppState.page='take_test'; renderMain();
-        };
-        row.appendChild(start);
-        block.appendChild(row);
-      });
-      c.appendChild(block);
-    });
-  }
-  container.appendChild(c);
-}
-
-async function renderTakeTest(container){
-  if(!AppState.currentUser){ container.appendChild(el('div', {}, 'Войдите')); return; }
-  const cat = AppState.selectedCategory;
-  const tests = await Storage.get('tests') || loadTests();
-  const list = tests[cat] || [];
-  const test = list.find(t=>t.id===AppState.selectedTestId);
-  if(!test){ container.appendChild(el('div', {}, 'Тест не найден')); return; }
-  const c = el('div'); c.appendChild(el('h2', {}, `Тест: ${test.title}`)); c.appendChild(el('div', { class:'small muted' }, `Категория: ${cat}`));
-  const answers = {};
-  const ol = el('ol', { style:'margin-top:12px' });
-  test.questions.forEach((q, idx)=>{
-    const li = el('li', { style:'margin-top:12px' });
-    li.appendChild(el('div', { class:'qtext' }, `${idx+1}. ${q.text}`));
-    q.options.forEach((opt, oi)=>{
-      const row = el('div', { class:'option-row' });
-      const label = el('label');
-      const radio = el('input', { type:'radio', name:`q_${q.id}`, value:oi });
-      radio.onchange = ()=> answers[q.id] = oi;
-      const optDiv = el('div', { class:'option-text' }, opt);
-      label.appendChild(radio); label.appendChild(optDiv);
-      row.appendChild(label);
-      li.appendChild(row);
-    });
-    ol.appendChild(li);
-  });
-  c.appendChild(ol);
-  const submit = el('button', { style:'margin-top:12px' }, 'Отправить');
-  const out = el('div', { class:'note-block', style:'margin-top:8px' });
-  submit.onclick = async ()=>{
-    let correct = 0;
-    test.questions.forEach(q=>{ if(answers[q.id]!==undefined && answers[q.id]===q.correct) correct++; });
-    const info = await collectClientInfo();
-    appendLog(Object.assign({ user: AppState.currentUser.username, testId:test.id, testTitle:test.title, event:'finish', result:`${correct}/${test.questions.length}` }, info));
-    out.innerHTML = `<strong>Результат:</strong> ${correct} из ${test.questions.length}`;
-    const detail = el('div', { style:'margin-top:8px' });
-    test.questions.forEach((q,i)=>{
-      detail.appendChild(el('div', { style:'margin-top:6px' }, `${i+1}. ${q.text} `));
-      detail.appendChild(el('div', { class:'small muted' }, `Правильный: ${q.options[q.correct]} | Ваш ответ: ${(answers[q.id]!==undefined)? q.options[answers[q.id]] : 'не отвечено'}`));
-    });
-    out.appendChild(detail); submit.disabled=true;
+  const addBtn = document.createElement("button");
+  addBtn.textContent = "Добавить";
+  addBtn.onclick = ()=>{
+    const username = prompt("Логин:");
+    const password = prompt("Пароль:");
+    const role = prompt("Роль (admin/student):","student");
+    if(username && password){
+      users.push({username,password,role});
+      Storage.set("users", users);
+    }
   };
-  c.appendChild(submit); c.appendChild(out); container.appendChild(c);
+  main.appendChild(addBtn);
+  const back = document.createElement("button");
+  back.textContent = "Назад";
+  back.onclick = renderMain;
+  main.appendChild(back);
 }
 
-/* Parser for text-import */
-function parseTestFromText(rawText){
-  const lines = rawText.split(/\r?\n/);
-  const questions = []; let current=null;
-  for(let ln of lines){
-    const line = ln.trim();
-    if(!line) continue;
-    const qMatch = line.match(/^(\d+)\)\s*(.+)$/);
-    if(qMatch){
-      if(current) questions.push(current);
-      current = { text: qMatch[2].trim(), options: [], correct:0 };
-      continue;
-    }
-    const optMatch = line.match(/^-+\s*(.+)$/);
-    if(optMatch && current){
-      let optText = optMatch[1].trim();
-      let isCorrect=false;
-      if(optText.endsWith('*')){ isCorrect=true; optText = optText.replace(/\*+$/,'').trim(); }
-      if(optText.endsWith('(*)')){ isCorrect=true; optText = optText.replace(/\(\*\)$/,'').trim(); }
-      if(optText.includes(' *')){ isCorrect=true; optText = optText.replace(/\s*\*+/,'').trim(); }
-      const idx = current.options.length;
-      current.options.push(optText);
-      if(isCorrect) current.correct = idx;
-      continue;
-    }
-    if(!current){
-      current = { text: line, options: [], correct:0 };
-    } else {
-      const alt = line.match(/^[A-Za-z]\)\s*(.+)$/);
-      if(alt){
-        let optText = alt[1].trim(); let isCorrect=false;
-        if(optText.endsWith('*')){ isCorrect=true; optText = optText.replace(/\*+$/,'').trim(); }
-        const idx = current.options.length; current.options.push(optText); if(isCorrect) current.correct = idx;
-      } else {
-        current.text += ' ' + line;
-      }
-    }
-  }
-  if(current) questions.push(current);
-  return questions.filter(q => q.options && q.options.length>=2);
-}
-
-/* Client info (IP + UA) */
-async function collectClientInfo(){
-  const ua = navigator.userAgent || '';
-  const time = new Date().toISOString();
-  let ip='unknown', city='', country='';
-  try {
-    const resp = await fetch('https://ipapi.co/json/'); // may be rate limited or blocked on some devices
-    if(resp.ok){
-      const js = await resp.json();
-      ip = js.ip || ip; city = js.city || ''; country = js.country_name || js.country || '';
-    }
-  } catch(e){}
-  return { ua, time, ip, city, country };
-}
-
-/* Preview */
-function showTestPreview(test){
-  const w = window.open('', '_blank', 'width=900,height=700,scrollbars=yes');
-  const html = ['<html><head><meta charset="utf-8"><title>Просмотр теста</title><style>body{font-family:Inter,Arial;padding:16px} h2{margin-top:0} .q{margin-bottom:12px}</style></head><body>'];
-  html.push('<h2>'+ (test.title||'') +'</h2>');
-  test.questions.forEach((q,i)=>{
-    html.push('<div class="q"><strong>'+ (i+1) +'. '+ q.text +'</strong><ul>');
-    q.options.forEach((opt,j)=> {
-      let mark = (j===q.correct)?' <strong style="color:green">[правильно]</strong>':'';
-      html.push('<li>'+ opt + mark +'</li>');
-    });
-    html.push('</ul></div>');
+/* ==== Категории ==== */
+function renderCategories() {
+  const main = document.getElementById("main");
+  const cats = Storage.get("categories") || [];
+  main.innerHTML = `<h3>Категории</h3>`;
+  cats.forEach((c,i)=>{
+    const div = document.createElement("div");
+    div.className="card";
+    div.textContent = c;
+    main.appendChild(div);
   });
-  html.push('</body></html>');
-  w.document.write(html.join(''));
-  w.document.close();
+  const btn = document.createElement("button");
+  btn.textContent="Добавить категорию";
+  btn.onclick=()=>{
+    const name=prompt("Название категории:");
+    if(name){ cats.push(name); Storage.set("categories", cats); }
+  };
+  main.appendChild(btn);
+  const back = document.createElement("button");
+  back.textContent="Назад";
+  back.onclick=renderMain;
+  main.appendChild(back);
 }
 
-/* ---------- Initialize app & cloud ---------- */
-(async function init(){
-  // initialize cloud first (but ensureInitialData will set local defaults)
-  try {
-    await initFirebaseCloud(); // attempt to init Firestore
-  } catch(e){ console.warn('Cloud init error', e); }
-  await ensureInitialData();
-  // if cloud ready, ensure Firestore has initial docs (if missing)
-  if (cloud.ready && cloud.db) {
-    try {
-      const keys = ['users','tests','categories','logs','sessions'];
-      for(const k of keys){
-        const docRef = cloud.db.collection('app').doc(k);
-        const doc = await docRef.get();
-        if(!doc.exists){
-          const local = DB.get(k);
-          if(local!==null && local!==undefined){
-            await docRef.set({ value: local, ts: Date.now() });
-          }
-        }
-      }
-    } catch(e){ console.warn('initial cloud seed failed', e); }
-  }
-  // restore session
-  try {
-    const sess = await Storage.get('sessions');
-    if(sess && sess.current) AppState.currentUser = sess.current;
-  } catch(e){}
-  AppState.page = 'home';
-  renderMain();
-  renderNav();
-})();
+/* ==== Тесты ==== */
+function renderTests() {
+  const main = document.getElementById("main");
+  const tests = Storage.get("tests") || [];
+  main.innerHTML = `<h3>Тесты</h3>`;
+
+  tests.forEach((t,i)=>{
+    const div = document.createElement("div");
+    div.className="card";
+    div.innerHTML = `<b>${t.title}</b> (${t.category||"без категории"})<br>
+      <button class="btn btn-blue" onclick="editTest(${i})">Редактировать</button>
+      <button class="btn btn-red" onclick="deleteTest(${i})">Удалить</button>
+    `;
+    main.appendChild(div);
+  });
+  const btn = document.createElement("button");
+  btn.textContent="Добавить тест";
+  btn.onclick=()=>{ editTest(); };
+  main.appendChild(btn);
+
+  const back = document.createElement("button");
+  back.textContent="Назад";
+  back.onclick=renderMain;
+  main.appendChild(back);
+}
+
+function editTest(idx) {
+  const tests = Storage.get("tests") || [];
+  let test = idx!=null ? tests[idx] : {title:"",category:"",questions:[]};
+
+  const main = document.getElementById("main");
+  main.innerHTML = `<h3>${idx!=null?"Редактирование":"Создание"} теста</h3>`;
+  const titleIn = document.createElement("input");
+  titleIn.value=test.title;
+  const catIn = document.createElement("input");
+  catIn.value=test.category;
+
+  main.appendChild(document.createTextNode("Название:"));
+  main.appendChild(titleIn);
+  main.appendChild(document.createElement("br"));
+  main.appendChild(document.createTextNode("Категория:"));
+  main.appendChild(catIn);
+
+  const qList = document.createElement("div");
+  test.questions.forEach((q,j)=>{
+    const card=document.createElement("div");
+    card.className="card";
+    card.innerHTML=`<b>Вопрос:</b> ${q.q}<br><b>Ответ:</b> ${q.a}`;
+    qList.appendChild(card);
+  });
+  main.appendChild(qList);
+
+  const btnAddQ = document.createElement("button");
+  btnAddQ.textContent="Добавить вопрос";
+  btnAddQ.onclick=()=>{
+    const q=prompt("Вопрос:");
+    const a=prompt("Правильный ответ:");
+    if(q&&a){ test.questions.push({q,a}); editTest(idx); }
+  };
+  main.appendChild(btnAddQ);
+
+  const btnSave = document.createElement("button");
+  btnSave.textContent="Сохранить";
+  btnSave.onclick=()=>{
+    test.title=titleIn.value;
+    test.category=catIn.value;
+    if(idx!=null) tests[idx]=test; else tests.push(test);
+    Storage.set("tests", tests);
+    renderTests();
+  };
+  main.appendChild(btnSave);
+
+  const back=document.createElement("button");
+  back.textContent="Назад";
+  back.onclick=renderTests;
+  main.appendChild(back);
+}
+
+function deleteTest(idx){
+  const tests=Storage.get("tests")||[];
+  if(confirm("Удалить тест?")){ tests.splice(idx,1); Storage.set("tests",tests); renderTests(); }
+}
+
+/* ==== Панель студента ==== */
+function renderStudentPanel(main){
+  const tests=Storage.get("tests")||[];
+  main.innerHTML="<h3>Доступные тесты</h3>";
+  tests.forEach((t,i)=>{
+    const div=document.createElement("div");
+    div.className="card";
+    div.innerHTML=`<b>${t.title}</b> (${t.category||"-"})<br>
+      <button class="btn btn-green" onclick="startTest(${i})">Пройти</button>`;
+    main.appendChild(div);
+  });
+  const logout=document.createElement("button");
+  logout.textContent="Выход";
+  logout.onclick=()=>{currentUser=null;renderMain()};
+  main.appendChild(logout);
+}
+
+/* ==== Прохождение теста ==== */
+function startTest(idx){
+  const tests=Storage.get("tests")||[];
+  const test=tests[idx];
+  currentTest={idx,answers:[]};
+
+  const main=document.getElementById("main");
+  main.innerHTML=`<h3>${test.title}</h3>`;
+  test.questions.forEach((q,j)=>{
+    const card=document.createElement("div");
+    card.className="card";
+    card.innerHTML=`<b>${q.q}</b><br><input id="ans${j}" placeholder="Ваш ответ">`;
+    main.appendChild(card);
+  });
+
+  const btn=new=document.createElement("button");
+  btn.textContent="Завершить";
+  btn.onclick=()=>finishTest(test);
+  main.appendChild(btn);
+}
+
+function finishTest(test){
+  let correct=0;
+  test.questions.forEach((q,j)=>{
+    const ans=document.getElementById("ans"+j).value;
+    if(ans.trim().toLowerCase()===q.a.trim().toLowerCase()) correct++;
+  });
+  alert(`Результат: ${correct}/${test.questions.length}`);
+  renderStudentPanel(document.getElementById("main"));
+}
+
+/* ==== Старт ==== */
+initSupabaseCloud();
+renderMain();
 </script>
 </body>
 </html>
-
-
