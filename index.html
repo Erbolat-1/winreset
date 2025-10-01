@@ -5,338 +5,190 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Тестовая платформа — Supabase</title>
 
-  <!-- Supabase SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/bundles/supabase.umd.min.js"></script>
-
   <style>
-    body { font-family: sans-serif; margin: 20px; background: #f9f9f9; }
-    #app { max-width: 960px; margin: auto; }
-    .card { padding: 15px; border: 1px solid #ccc; border-radius: 8px; margin: 10px 0; background: #fff; }
-    .btn { margin: 4px; padding: 6px 12px; cursor: pointer; border: none; border-radius: 5px; }
-    .btn-red { background: #e74c3c; color: white; }
-    .btn-blue { background: #3498db; color: white; }
-    .btn-green { background: #2ecc71; color: white; }
-    .btn-yellow { background: #f1c40f; color: black; }
-    input, select, textarea { padding: 6px; margin: 4px; width: 90%; }
+    body { font-family: sans-serif; margin: 0; background: #f5f5f5; }
+    #app { max-width: 800px; margin: auto; padding: 20px; }
+    h1,h2,h3 { margin: 10px 0; }
+    button { padding: 6px 12px; margin: 4px; }
+    .block { background: white; padding: 12px; margin: 8px 0; border-radius: 6px; }
+    .correct { color: green; font-weight: bold; }
+    .wrong { color: red; font-weight: bold; }
+    .note { margin-top: 6px; font-size: 14px; }
   </style>
+
+  <!-- Подключаем supabase-js -->
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+    const SUPABASE_URL = "https://peqqdikmngeswcxvesrt.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlcXFkaWttbmdlc3djeHZlc3J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyNTk3NDgsImV4cCI6MjA3NDgzNTc0OH0.IZQ0_bT8r2Rw3DjODwdqeqz3wEqVCcMbtaXLbKTTegU";
+
+    export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // ==== Локальное хранилище + синхронизация ====
+    const Storage = {
+      set(k,v){ localStorage.setItem(k, JSON.stringify(v)); },
+      get(k){ return JSON.parse(localStorage.getItem(k)||'null'); }
+    };
+
+    async function cloudSet(id, value) {
+      const { error } = await supabase
+        .from("app")
+        .upsert({ id, value, ts: new Date().toISOString() });
+      if (error) console.error("Ошибка cloudSet:", error);
+    }
+
+    async function cloudGet(id) {
+      const { data, error } = await supabase
+        .from("app")
+        .select("value")
+        .eq("id", id)
+        .single();
+      if (error) { console.error("Ошибка cloudGet:", error); return null; }
+      return data?.value ?? null;
+    }
+
+    function cloudSubscribe(callback) {
+      supabase
+        .channel("app-changes")
+        .on("postgres_changes",
+          { event: "*", schema: "public", table: "app" },
+          (payload) => callback(payload.new.id, payload.new.value)
+        )
+        .subscribe();
+    }
+
+    async function initSupabaseCloud() {
+      const keys = ["tests","categories","users"];
+      for (const k of keys) {
+        const val = await cloudGet(k);
+        if (val) Storage.set(k, val);
+      }
+      cloudSubscribe((id,value)=>{
+        Storage.set(id,value);
+        renderMain();
+      });
+    }
+
+    // ==== Данные приложения ====
+    let AppState = { page: "login", user: null };
+
+    function getTests() { return Storage.get("tests") || []; }
+    function saveTests(tests) { Storage.set("tests",tests); cloudSet("tests",tests); }
+
+    // ==== Интерфейс ====
+    function el(tag,attrs={},...children){
+      const e=document.createElement(tag);
+      for(const [k,v] of Object.entries(attrs)){
+        if(k==="class") e.className=v;
+        else if(k.startsWith("on")) e.addEventListener(k.substring(2),v);
+        else e.setAttribute(k,v);
+      }
+      for(const c of children){
+        e.appendChild(typeof c==="string"?document.createTextNode(c):c);
+      }
+      return e;
+    }
+
+    function renderLogin(root){
+      root.innerHTML="";
+      root.append(
+        el("h2",{},"Вход"),
+        el("input",{id:"login-username",placeholder:"Логин"}),
+        el("input",{id:"login-password",placeholder:"Пароль",type:"password"}),
+        el("button",{onclick:()=>{
+          const u=document.getElementById("login-username").value;
+          const p=document.getElementById("login-password").value;
+          if(u==="admin"&&p==="12345"){ AppState.user="admin"; AppState.page="admin"; renderMain(); }
+          else { AppState.user="student"; AppState.page="tests"; renderMain(); }
+        }},"Войти")
+      );
+    }
+
+    function renderAdmin(root){
+      root.innerHTML="";
+      root.append(el("h2",{},"Админка: тесты"));
+      const tests=getTests();
+      for(let i=0;i<tests.length;i++){
+        root.append(
+          el("div",{class:"block"},
+            el("b",{},tests[i].title),
+            el("button",{onclick:()=>{
+              tests.splice(i,1);
+              saveTests(tests);
+              renderMain();
+            }},"Удалить")
+          )
+        );
+      }
+      root.append(el("button",{onclick:()=>{
+        const title=prompt("Название теста?");
+        if(!title)return;
+        const newTest={title,questions:[
+          {q:"2+2=?",options:["3","4","5"],correct:1},
+          {q:"Столица Франции?",options:["Берлин","Париж","Рим"],correct:1}
+        ]};
+        tests.push(newTest);
+        saveTests(tests);
+        renderMain();
+      }},"Добавить тест"));
+    }
+
+    function renderTests(root){
+      root.innerHTML="";
+      root.append(el("h2",{},"Выберите тест"));
+      const tests=getTests();
+      for(let i=0;i<tests.length;i++){
+        root.append(
+          el("div",{class:"block"},
+            el("b",{},tests[i].title),
+            el("button",{onclick:()=>{AppState.page="take";AppState.testIndex=i;AppState.qIndex=0;AppState.score=0;renderMain();}},"Пройти")
+          )
+        );
+      }
+    }
+
+    function renderTakeTest(root){
+      root.innerHTML="";
+      const tests=getTests();
+      const test=tests[AppState.testIndex];
+      const q=test.questions[AppState.qIndex];
+
+      root.append(el("h2",{},test.title));
+      root.append(el("div",{},q.q));
+
+      q.options.forEach((opt,idx)=>{
+        root.append(
+          el("button",{onclick:()=>{
+            if(idx===q.correct){
+              AppState.score++;
+              alert("Верно!");
+            } else {
+              alert("Неверно!");
+              // Показываем правильный ответ
+              const note=el("div",{class:"note"},"Правильный ответ: "+q.options[q.correct]);
+              root.append(note);
+            }
+            AppState.qIndex++;
+            if(AppState.qIndex<test.questions.length) renderMain();
+            else { alert("Тест закончен! Баллы: "+AppState.score+"/"+test.questions.length); AppState.page="tests"; renderMain(); }
+          }},opt)
+        );
+      });
+    }
+
+    function renderMain(){
+      const root=document.getElementById("app");
+      if(AppState.page==="login") return renderLogin(root);
+      if(AppState.page==="admin") return renderAdmin(root);
+      if(AppState.page==="tests") return renderTests(root);
+      if(AppState.page==="take") return renderTakeTest(root);
+    }
+
+    window.addEventListener("load",()=>{initSupabaseCloud(); renderMain();});
+  </script>
 </head>
 <body>
-<div id="app">
-  <h1>Тестовая платформа (Supabase)</h1>
-  <div id="main"></div>
-</div>
-
-<script>
-/* ==== Supabase Config ==== */
-const SUPABASE_URL = "https://peqqdikmngeswcxvesrt.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlcXFkaWttbmdlc3djeHZlc3J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkyNTk3NDgsImV4cCI6MjA3NDgzNTc0OH0.IZQ0_bT8r2Rw3DjODwdqeqz3wEqVCcMbtaXLbKTTegU";
-const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-/* ==== Локальное хранилище ==== */
-const DB = new Map();
-const Storage = {
-  set: (k,v) => { localStorage.setItem(k, JSON.stringify(v)); DB.set(k,v); },
-  get: (k) => {
-    if(DB.has(k)) return DB.get(k);
-    try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; }
-  }
-};
-const _storageSet = Storage.set.bind(Storage);
-
-/* ==== Облако: upsert ==== */
-async function supaSaveKV(key, value) {
-  const payload = { key, value, ts: new Date().toISOString() };
-  const { error } = await supabase.from("kv_store").upsert(payload, { onConflict: "key" });
-  if (error) console.warn("supaSaveKV error", error);
-}
-
-/* ==== Подписка на изменения ==== */
-async function initSupabaseCloud() {
-  supabase.channel("kv-store")
-    .on("postgres_changes", { event: "*", schema: "public", table: "kv_store" }, payload => {
-      if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-        const k = payload.new.key;
-        const v = payload.new.value;
-        DB.set(k,v);
-        localStorage.setItem(k, JSON.stringify(v));
-        console.log("Обновлено из облака:", k);
-        renderMain();
-      }
-      if (payload.eventType === "DELETE") {
-        const k = payload.old.key;
-        DB.delete(k);
-        localStorage.removeItem(k);
-        console.log("Удалено из облака:", k);
-        renderMain();
-      }
-    })
-    .subscribe();
-  console.log("✅ Supabase realtime активен");
-}
-
-/* ==== Переписываем Storage.set ==== */
-Storage.set = async function(key, value) {
-  _storageSet(key, value); // локально
-  await supaSaveKV(key, value); // в облако
-};
-
-/* ==== Инициализация данных ==== */
-if (!Storage.get("users")) {
-  Storage.set("users", [
-    { username: "admin", password: "12345", role: "admin" },
-    { username: "student", password: "1111", role: "student" }
-  ]);
-}
-if (!Storage.get("categories")) Storage.set("categories", []);
-if (!Storage.get("tests")) Storage.set("tests", []);
-
-/* ==== Текущий пользователь ==== */
-let currentUser = null;
-let currentTest = null;
-
-/* ==== UI ==== */
-function renderMain() {
-  const main = document.getElementById("main");
-  main.innerHTML = "";
-
-  if (!currentUser) return renderLogin();
-
-  const h = document.createElement("h3");
-  h.textContent = `Здравствуйте, ${currentUser.username} (${currentUser.role})`;
-  main.appendChild(h);
-
-  if (currentUser.role === "admin") {
-    renderAdminPanel(main);
-  } else {
-    renderStudentPanel(main);
-  }
-}
-
-/* ==== Login ==== */
-function renderLogin() {
-  const main = document.getElementById("main");
-  main.innerHTML = `
-    <div class="card">
-      <h3>Вход</h3>
-      <input id="login-user" placeholder="Логин"><br>
-      <input id="login-pass" type="password" placeholder="Пароль"><br>
-      <button class="btn btn-blue" onclick="handleLogin()">Войти</button>
-    </div>
-  `;
-}
-function handleLogin() {
-  const u = document.getElementById("login-user").value;
-  const p = document.getElementById("login-pass").value;
-  const users = Storage.get("users") || [];
-  const found = users.find(x => x.username===u && x.password===p);
-  if (found) {
-    currentUser = found;
-    renderMain();
-  } else {
-    alert("Неверный логин/пароль");
-  }
-}
-
-/* ==== Панель админа ==== */
-function renderAdminPanel(main) {
-  const block = document.createElement("div");
-  block.innerHTML = `
-    <button class="btn btn-green" onclick="renderUsers()">Пользователи</button>
-    <button class="btn btn-yellow" onclick="renderCategories()">Категории</button>
-    <button class="btn btn-blue" onclick="renderTests()">Тесты</button>
-    <button class="btn btn-red" onclick="currentUser=null;renderMain()">Выход</button>
-  `;
-  main.appendChild(block);
-}
-
-/* ==== Пользователи ==== */
-function renderUsers() {
-  const main = document.getElementById("main");
-  const users = Storage.get("users") || [];
-  main.innerHTML = `<h3>Пользователи</h3>`;
-
-  users.forEach((u,i)=>{
-    const div = document.createElement("div");
-    div.className = "card";
-    div.textContent = `${u.username} (${u.role})`;
-    main.appendChild(div);
-  });
-  const addBtn = document.createElement("button");
-  addBtn.textContent = "Добавить";
-  addBtn.onclick = ()=>{
-    const username = prompt("Логин:");
-    const password = prompt("Пароль:");
-    const role = prompt("Роль (admin/student):","student");
-    if(username && password){
-      users.push({username,password,role});
-      Storage.set("users", users);
-    }
-  };
-  main.appendChild(addBtn);
-  const back = document.createElement("button");
-  back.textContent = "Назад";
-  back.onclick = renderMain;
-  main.appendChild(back);
-}
-
-/* ==== Категории ==== */
-function renderCategories() {
-  const main = document.getElementById("main");
-  const cats = Storage.get("categories") || [];
-  main.innerHTML = `<h3>Категории</h3>`;
-  cats.forEach((c,i)=>{
-    const div = document.createElement("div");
-    div.className="card";
-    div.textContent = c;
-    main.appendChild(div);
-  });
-  const btn = document.createElement("button");
-  btn.textContent="Добавить категорию";
-  btn.onclick=()=>{
-    const name=prompt("Название категории:");
-    if(name){ cats.push(name); Storage.set("categories", cats); }
-  };
-  main.appendChild(btn);
-  const back = document.createElement("button");
-  back.textContent="Назад";
-  back.onclick=renderMain;
-  main.appendChild(back);
-}
-
-/* ==== Тесты ==== */
-function renderTests() {
-  const main = document.getElementById("main");
-  const tests = Storage.get("tests") || [];
-  main.innerHTML = `<h3>Тесты</h3>`;
-
-  tests.forEach((t,i)=>{
-    const div = document.createElement("div");
-    div.className="card";
-    div.innerHTML = `<b>${t.title}</b> (${t.category||"без категории"})<br>
-      <button class="btn btn-blue" onclick="editTest(${i})">Редактировать</button>
-      <button class="btn btn-red" onclick="deleteTest(${i})">Удалить</button>
-    `;
-    main.appendChild(div);
-  });
-  const btn = document.createElement("button");
-  btn.textContent="Добавить тест";
-  btn.onclick=()=>{ editTest(); };
-  main.appendChild(btn);
-
-  const back = document.createElement("button");
-  back.textContent="Назад";
-  back.onclick=renderMain;
-  main.appendChild(back);
-}
-
-function editTest(idx) {
-  const tests = Storage.get("tests") || [];
-  let test = idx!=null ? tests[idx] : {title:"",category:"",questions:[]};
-
-  const main = document.getElementById("main");
-  main.innerHTML = `<h3>${idx!=null?"Редактирование":"Создание"} теста</h3>`;
-  const titleIn = document.createElement("input");
-  titleIn.value=test.title;
-  const catIn = document.createElement("input");
-  catIn.value=test.category;
-
-  main.appendChild(document.createTextNode("Название:"));
-  main.appendChild(titleIn);
-  main.appendChild(document.createElement("br"));
-  main.appendChild(document.createTextNode("Категория:"));
-  main.appendChild(catIn);
-
-  const qList = document.createElement("div");
-  test.questions.forEach((q,j)=>{
-    const card=document.createElement("div");
-    card.className="card";
-    card.innerHTML=`<b>Вопрос:</b> ${q.q}<br><b>Ответ:</b> ${q.a}`;
-    qList.appendChild(card);
-  });
-  main.appendChild(qList);
-
-  const btnAddQ = document.createElement("button");
-  btnAddQ.textContent="Добавить вопрос";
-  btnAddQ.onclick=()=>{
-    const q=prompt("Вопрос:");
-    const a=prompt("Правильный ответ:");
-    if(q&&a){ test.questions.push({q,a}); editTest(idx); }
-  };
-  main.appendChild(btnAddQ);
-
-  const btnSave = document.createElement("button");
-  btnSave.textContent="Сохранить";
-  btnSave.onclick=()=>{
-    test.title=titleIn.value;
-    test.category=catIn.value;
-    if(idx!=null) tests[idx]=test; else tests.push(test);
-    Storage.set("tests", tests);
-    renderTests();
-  };
-  main.appendChild(btnSave);
-
-  const back=document.createElement("button");
-  back.textContent="Назад";
-  back.onclick=renderTests;
-  main.appendChild(back);
-}
-
-function deleteTest(idx){
-  const tests=Storage.get("tests")||[];
-  if(confirm("Удалить тест?")){ tests.splice(idx,1); Storage.set("tests",tests); renderTests(); }
-}
-
-/* ==== Панель студента ==== */
-function renderStudentPanel(main){
-  const tests=Storage.get("tests")||[];
-  main.innerHTML="<h3>Доступные тесты</h3>";
-  tests.forEach((t,i)=>{
-    const div=document.createElement("div");
-    div.className="card";
-    div.innerHTML=`<b>${t.title}</b> (${t.category||"-"})<br>
-      <button class="btn btn-green" onclick="startTest(${i})">Пройти</button>`;
-    main.appendChild(div);
-  });
-  const logout=document.createElement("button");
-  logout.textContent="Выход";
-  logout.onclick=()=>{currentUser=null;renderMain()};
-  main.appendChild(logout);
-}
-
-/* ==== Прохождение теста ==== */
-function startTest(idx){
-  const tests=Storage.get("tests")||[];
-  const test=tests[idx];
-  currentTest={idx,answers:[]};
-
-  const main=document.getElementById("main");
-  main.innerHTML=`<h3>${test.title}</h3>`;
-  test.questions.forEach((q,j)=>{
-    const card=document.createElement("div");
-    card.className="card";
-    card.innerHTML=`<b>${q.q}</b><br><input id="ans${j}" placeholder="Ваш ответ">`;
-    main.appendChild(card);
-  });
-
-  const btn=document.createElement("button");
-  btn.textContent="Завершить";
-  btn.onclick=()=>finishTest(test);
-  main.appendChild(btn);
-}
-
-function finishTest(test){
-  let correct=0;
-  test.questions.forEach((q,j)=>{
-    const ans=document.getElementById("ans"+j).value;
-    if(ans.trim().toLowerCase()===q.a.trim().toLowerCase()) correct++;
-  });
-  alert(`Результат: ${correct}/${test.questions.length}`);
-  renderStudentPanel(document.getElementById("main"));
-}
-
-/* ==== Старт ==== */
-initSupabaseCloud();
-renderMain();
-</script>
+  <div id="app"></div>
 </body>
 </html>
